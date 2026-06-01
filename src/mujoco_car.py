@@ -4,7 +4,7 @@ from dm_control.composer.observation import observable
 import dm_control.utils.transformations as tr
 import mujoco.viewer
 import numpy as np
-import utils
+from utils import TIME_STEP
 
 
 class CarObservables(composer.Observables):
@@ -107,7 +107,7 @@ class MujocoCarSim:
         self.viewer_handle.cam.fixedcamid = self.physics.model.camera('overhead_track').id
 
         # Get simulation time step in our control calculation
-        self.sim_dt = utils.time_step
+        self.sim_dt = TIME_STEP
 
     def get_car_pose(self) -> np.ndarray:
         """

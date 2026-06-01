@@ -1,4 +1,4 @@
-import casadi
+import casadi as ca
 import numpy as np
 from utils import ControllerBase
 
@@ -25,7 +25,7 @@ class CEC(ControllerBase):
 
         # TODO: define optimization solver
         nlp = ...
-        solver = casadi.nlpsol("S", "ipopt", nlp)
+        solver = ca.nlpsol("S", "ipopt", nlp)
         sol = solver(
             x0=...,  # TODO: initial guess
             lbx=..., # TODO: lower bound on optimization variables

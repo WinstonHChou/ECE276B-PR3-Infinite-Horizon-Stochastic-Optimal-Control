@@ -1,5 +1,4 @@
 import numpy as np
-from numpy import sin, cos, pi
 import matplotlib.pyplot as plt
 from matplotlib import animation
 from time import time
@@ -8,14 +7,14 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).parent
 
-v_max = 1
-v_min = 0.1
-w_max = 1
-w_min = -1
-time_step = 0.5  # time between steps in seconds
+V_MAX = 1
+V_MIN = 0.1
+W_MAX = 1
+W_MIN = -1
+TIME_STEP = 0.5  # time between steps in seconds
 T = 100
-sim_time = 120  # simulation time
-sigma = np.array([0.04, 0.04, 0.004])
+SIM_TIME = 120  # simulation time
+SIGMA = np.array([0.04, 0.04, 0.004])
 
 # Reference trajectory parameters
 A = 2.0
@@ -26,8 +25,8 @@ B = 2.0
 def lemniscate(k):
     """Reference trajectory: x = A sin(at), y = B sin(2at), periodic with period T."""
     k = k % T
-    t = k * time_step
-    a = 2 * np.pi / (T * time_step)
+    t = k * TIME_STEP
+    a = 2 * np.pi / (T * TIME_STEP)
     xref = A * np.sin(a * t)
     yref = B * np.sin(2 * a * t)
     vx = A * a * np.cos(a * t)
@@ -38,9 +37,9 @@ def lemniscate(k):
 
 # Initial state on the reference trajectory at k=2
 _x0, _y0, _th0 = lemniscate(2)
-x_init = _x0
-y_init = _y0
-theta_init = _th0
+X_INIT = _x0
+Y_INIT = _y0
+THETA_INIT = _th0
 
 
 # This function implement the car dynamics
@@ -48,8 +47,8 @@ def car_next_state(time_step, cur_state, control, noise=True):
     theta = cur_state[2]
     rot_3d_z = np.array([[np.cos(theta), 0], [np.sin(theta), 0], [0, 1]])
     f = rot_3d_z @ control
-    w_xy = np.random.normal(0, sigma[0], 2)
-    w_theta = np.random.normal(0, sigma[2], 1)
+    w_xy = np.random.normal(0, SIGMA[0], 2)
+    w_theta = np.random.normal(0, SIGMA[2], 1)
     w = np.concatenate((w_xy, w_theta))
     if noise:
         return cur_state + time_step * f.flatten() + w
@@ -63,7 +62,7 @@ def visualize(car_states, ref_traj, obstacles, t, time_step, save=False):
     def create_triangle(state=[0, 0, 0], h=0.5, w=0.25, update=False):
         x, y, th = state
         triangle = np.array([[h, 0], [0, w / 2], [0, -w / 2], [h, 0]]).T
-        rotation_matrix = np.array([[cos(th), -sin(th)], [sin(th), cos(th)]])
+        rotation_matrix = np.array([[np.cos(th), -np.sin(th)], [np.sin(th), np.cos(th)]])
 
         coords = np.array([[x, y]]) + (rotation_matrix @ triangle).T
         if update == True:
@@ -200,10 +199,10 @@ class SimpleController(ControllerBase):
         k_v = 0.55
         k_w = 1.0
         v = k_v * np.sqrt((cur_state[0] - cur_ref_state[0]) ** 2 + (cur_state[1] - cur_ref_state[1]) ** 2)
-        v = np.clip(v, v_min, v_max)
+        v = np.clip(v, V_MIN, V_MAX)
         angle_diff = cur_ref_state[2] - cur_state[2]
         angle_diff = (angle_diff + np.pi) % (2 * np.pi) - np.pi
         w = k_w * angle_diff
-        w = np.clip(w, w_min, w_max)
+        w = np.clip(w, W_MIN, W_MAX)
         u = [v, w]
         return u

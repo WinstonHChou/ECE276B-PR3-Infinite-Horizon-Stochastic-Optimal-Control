@@ -1,13 +1,13 @@
 from time import time
 import numpy as np
-import utils
+from utils import *
 # from cec import CEC
 from mujoco_car import MujocoCarSim
 import argparse
 
 
 CONTROLLER_LOOKUP = {
-    utils.SimpleController.name: utils.SimpleController,
+    SimpleController.name: SimpleController,
     # CEC.name: CEC,
 }
 
@@ -28,7 +28,7 @@ def main():
     ])
 
     # Params
-    traj = utils.lemniscate
+    traj = lemniscate
     ref_traj = []
     error_trans = 0.0
     error_rot = 0.0
@@ -39,7 +39,7 @@ def main():
     main_loop = time()  # return time in sec
 
     # Initialize state
-    cur_state = np.array([utils.x_init, utils.y_init, utils.theta_init])
+    cur_state = np.array([X_INIT, Y_INIT, THETA_INIT])
     cur_iter = 0
 
     # Initialize MuJoCo simulation environment
@@ -52,10 +52,10 @@ def main():
     controller = controller_cls()
 
     # Main loop
-    while cur_iter * utils.time_step < utils.sim_time:
+    while cur_iter * TIME_STEP < SIM_TIME:
         t1 = time()
         # Get reference state
-        cur_time = cur_iter * utils.time_step
+        cur_time = cur_iter * TIME_STEP
         cur_ref = traj(cur_iter)
         # Save current state and reference state for visualization
         ref_traj.append(cur_ref)
@@ -63,20 +63,20 @@ def main():
 
         ################################################################
         # Generate control input
-        control = controller(cur_iter, cur_state, cur_ref)
+        control = controller(TIME_STEP, cur_state, cur_ref)
         ################################################################
 
         # Apply control input
         if USE_MUJOCO:
             next_state = mujoco_sim.car_next_state(control)
         else:
-            next_state = utils.car_next_state(utils.time_step, cur_state, control, noise=True)
+            next_state = car_next_state(TIME_STEP, cur_state, control, noise=True)
 
         # Update current state
         cur_state = next_state
 
         # Loop time
-        t2 = utils.time()
+        t2 = time()
         compute_time = t2 - t1
         times.append(compute_time)
         cur_err = cur_state - cur_ref
@@ -109,7 +109,7 @@ def main():
     ref_traj = np.array(ref_traj)
     car_states = np.array(car_states)
     times = np.array(times)
-    utils.visualize(car_states, ref_traj, obstacles, times, utils.time_step, save=True)
+    visualize(car_states, ref_traj, obstacles, times, TIME_STEP, save=True)
 
 
 if __name__ == "__main__":
