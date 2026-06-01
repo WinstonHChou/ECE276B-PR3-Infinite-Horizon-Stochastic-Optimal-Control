@@ -1,10 +1,21 @@
 from time import time
 import numpy as np
 import utils
+# from cec import CEC
 from mujoco_car import MujocoCarSim
+import argparse
 
 
-use_mujoco = False
+CONTROLLER_LOOKUP = {
+    utils.SimpleController.name: utils.SimpleController,
+    # CEC.name: CEC,
+}
+
+parser = argparse.ArgumentParser()
+parser.add_argument("-c", "--controller", choices=CONTROLLER_LOOKUP.keys(), help="Controller to use", required=True)
+parser.add_argument("--mujoco", action="store_true", help="Use MuJoCo simulation")
+args = parser.parse_args()
+USE_MUJOCO = args.mujoco
 
 
 def main():
@@ -33,8 +44,12 @@ def main():
 
     # Initialize MuJoCo simulation environment
     mujoco_sim = None
-    if use_mujoco:
+    if USE_MUJOCO:
         mujoco_sim = MujocoCarSim()
+
+    # Initialize controller
+    controller_cls = CONTROLLER_LOOKUP[args.controller]
+    controller = controller_cls()
 
     # Main loop
     while cur_iter * utils.time_step < utils.sim_time:
@@ -49,12 +64,12 @@ def main():
         ################################################################
         # Generate control input
         # TODO: Replace this simple controller with your own controller
-        control = utils.simple_controller(cur_state, cur_ref)
+        control = controller(cur_iter, cur_state, cur_ref)
         print("[v,w]", control)
         ################################################################
 
         # Apply control input
-        if use_mujoco:
+        if USE_MUJOCO:
             next_state = mujoco_sim.car_next_state(control)
         else:
             next_state = utils.car_next_state(utils.time_step, cur_state, control, noise=True)
@@ -82,7 +97,7 @@ def main():
     print("Final error_rot: ", error_rot)
 
     # Proper shut down of MuJoCo
-    if use_mujoco:
+    if USE_MUJOCO:
         mujoco_sim.viewer_handle.close()
 
     # Visualization

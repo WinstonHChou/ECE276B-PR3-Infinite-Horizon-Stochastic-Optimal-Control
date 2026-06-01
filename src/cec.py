@@ -1,8 +1,11 @@
 import casadi
 import numpy as np
+from utils import ControllerBase
 
 
-class CEC:
+class CEC(ControllerBase):
+    name = "cec"
+    
     def __init__(self) -> None:
         raise NotImplementedError
 

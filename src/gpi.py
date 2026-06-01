@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import numpy as np
 from value_function import ValueFunction
+from utils import ControllerBase
 import utils
 
 
@@ -32,7 +33,9 @@ class GpiConfig:
     v_batch_size: int  # batch size if GPU memory is not enough
 
 
-class GPI:
+class GPI(ControllerBase):
+    name = "gpi"
+    
     def __init__(self, config: GpiConfig):
         self.config = config
         # TODO: other initialization code

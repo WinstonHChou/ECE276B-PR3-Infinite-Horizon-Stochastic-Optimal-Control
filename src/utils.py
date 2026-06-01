@@ -4,6 +4,9 @@ import matplotlib.pyplot as plt
 from matplotlib import animation
 from time import time
 from tqdm import tqdm
+from pathlib import Path
+
+BASE_DIR = Path(__file__).parent
 
 v_max = 1
 v_min = 0.1
@@ -38,19 +41,6 @@ _x0, _y0, _th0 = lemniscate(2)
 x_init = _x0
 y_init = _y0
 theta_init = _th0
-
-
-# This function implements a simple P controller
-def simple_controller(cur_state, ref_state):
-    k_v = 0.55
-    k_w = 1.0
-    v = k_v * np.sqrt((cur_state[0] - ref_state[0]) ** 2 + (cur_state[1] - ref_state[1]) ** 2)
-    v = np.clip(v, v_min, v_max)
-    angle_diff = ref_state[2] - cur_state[2]
-    angle_diff = (angle_diff + np.pi) % (2 * np.pi) - np.pi
-    w = k_w * angle_diff
-    w = np.clip(w, w_min, w_max)
-    return [v, w]
 
 
 # This function implement the car dynamics
@@ -166,7 +156,7 @@ def visualize(car_states, ref_traj, obstacles, t, time_step, save=False):
     plt.show()
 
     if save == True:
-        sim.save("./fig/animation" + str(time()) + ".gif", writer="ffmpeg", fps=15)
+        sim.save(str(BASE_DIR / f"./fig/animation{time()}.gif"), writer="ffmpeg", fps=15)
 
     return
 
@@ -183,3 +173,37 @@ def timer(func):
 
     return wrap_func
 
+class ControllerBase:
+    name = ""
+    def __init__(self) -> None:
+        raise NotImplementedError
+
+    def __call__(self, t: int, cur_state: np.ndarray, cur_ref_state: np.ndarray) -> np.ndarray:
+        raise NotImplementedError
+
+# This class implements a simple P controller
+class SimpleController(ControllerBase):
+    name = "simple"
+    def __init__(self) -> None:
+        pass
+
+    def __call__(self, t: int, cur_state: np.ndarray, cur_ref_state: np.ndarray) -> np.ndarray:
+        """
+        Given the time step, current state, and reference state, return the control input.
+        Args:
+            t (int): time step
+            cur_state (np.ndarray): current state
+            cur_ref_state (np.ndarray): reference state
+        Returns:
+            np.ndarray: control input
+        """
+        k_v = 0.55
+        k_w = 1.0
+        v = k_v * np.sqrt((cur_state[0] - cur_ref_state[0]) ** 2 + (cur_state[1] - cur_ref_state[1]) ** 2)
+        v = np.clip(v, v_min, v_max)
+        angle_diff = cur_ref_state[2] - cur_state[2]
+        angle_diff = (angle_diff + np.pi) % (2 * np.pi) - np.pi
+        w = k_w * angle_diff
+        w = np.clip(w, w_min, w_max)
+        u = [v, w]
+        return u
