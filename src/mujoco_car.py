@@ -4,7 +4,7 @@ from dm_control.composer.observation import observable
 import dm_control.utils.transformations as tr
 import mujoco.viewer
 import numpy as np
-from utils import TIME_STEP
+from utils import TIME_STEP, BASE_DIR
 
 
 class CarObservables(composer.Observables):
@@ -59,7 +59,7 @@ class CarObservables(composer.Observables):
 
 class Car(composer.Robot):
     def _build(self, name='buddy'):
-        model_path = "mujoco_assets/env.xml"
+        model_path = str(BASE_DIR / "mujoco_assets" / "env.xml")
         self._mjcf_root = mjcf.from_path(f'{model_path}')
         if name:
             self._mjcf_root.model = name
