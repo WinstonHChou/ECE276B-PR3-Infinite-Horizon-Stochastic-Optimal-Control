@@ -36,7 +36,8 @@ class GpiConfig:
 class GPI(ControllerBase):
     name = "gpi"
     
-    def __init__(self, config: GpiConfig):
+    def __init__(self, time_step, config: GpiConfig, *args, **kwargs) -> None:
+        super().__init__(time_step)
         self.config = config
         # TODO: other initialization code
 

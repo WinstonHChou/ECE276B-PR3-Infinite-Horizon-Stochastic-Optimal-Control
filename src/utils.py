@@ -7,10 +7,12 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).parent
 
+ROBOT_RADIUS = 0.3
 V_MAX = 1
 V_MIN = 0.1
 W_MAX = 1
 W_MIN = -1
+
 TIME_STEP = 0.5  # time between steps in seconds
 T = 100
 SIM_TIME = 120  # simulation time
@@ -160,7 +162,7 @@ def visualize(car_states, ref_traj, obstacles, t, time_step, save=False):
     )
     plt.show()
 
-    if save == True:
+    if save:
         sim.save(str(BASE_DIR / f"./fig/animation{time()}.gif"), writer="ffmpeg", fps=15)
 
     return
@@ -180,8 +182,10 @@ def timer(func):
 
 class ControllerBase:
     name = ""
-    def __init__(self) -> None:
-        raise NotImplementedError
+    __slot__ = ('dt')
+    
+    def __init__(self, time_step, *args, **kwargs) -> None:
+        self.dt = time_step
 
     def __call__(self, t: int, cur_state: np.ndarray, cur_ref_state: np.ndarray) -> np.ndarray:
         raise NotImplementedError
@@ -189,8 +193,6 @@ class ControllerBase:
 # This class implements a simple P controller
 class SimpleController(ControllerBase):
     name = "simple"
-    def __init__(self) -> None:
-        pass
 
     def __call__(self, t: int, cur_state: np.ndarray, cur_ref_state: np.ndarray) -> np.ndarray:
         """

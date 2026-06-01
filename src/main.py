@@ -13,9 +13,11 @@ CONTROLLER_LOOKUP = {
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-c", "--controller", choices=CONTROLLER_LOOKUP.keys(), help="Controller to use", required=True)
+parser.add_argument("--save", dest="save", action="store_true", help="Save the simulation as a gif")
 parser.add_argument("--mujoco", action="store_true", help="Use MuJoCo simulation")
 args = parser.parse_args()
 USE_MUJOCO = args.mujoco
+SAVE_GIF = args.save
 
 
 def main():
@@ -49,7 +51,7 @@ def main():
 
     # Initialize controller
     controller_cls = CONTROLLER_LOOKUP[args.controller]
-    controller = controller_cls()
+    controller = controller_cls(time_step=TIME_STEP)
 
     # Main loop
     while cur_iter * TIME_STEP < SIM_TIME:
@@ -63,7 +65,7 @@ def main():
 
         ################################################################
         # Generate control input
-        control = controller(TIME_STEP, cur_state, cur_ref)
+        control = controller(cur_iter, cur_state, cur_ref)
         ################################################################
 
         # Apply control input
@@ -109,7 +111,7 @@ def main():
     ref_traj = np.array(ref_traj)
     car_states = np.array(car_states)
     times = np.array(times)
-    visualize(car_states, ref_traj, obstacles, times, TIME_STEP, save=True)
+    visualize(car_states, ref_traj, obstacles, times, TIME_STEP, save=SAVE_GIF)
 
 
 if __name__ == "__main__":
