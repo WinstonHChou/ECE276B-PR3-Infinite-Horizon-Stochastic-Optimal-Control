@@ -63,9 +63,7 @@ def main():
 
         ################################################################
         # Generate control input
-        # TODO: Replace this simple controller with your own controller
         control = controller(cur_iter, cur_state, cur_ref)
-        print("[v,w]", control)
         ################################################################
 
         # Apply control input
@@ -76,17 +74,24 @@ def main():
 
         # Update current state
         cur_state = next_state
+
         # Loop time
         t2 = utils.time()
-        print(cur_iter)
-        print(t2 - t1)
-        times.append(t2 - t1)
+        compute_time = t2 - t1
+        times.append(compute_time)
         cur_err = cur_state - cur_ref
         cur_err[2] = np.arctan2(np.sin(cur_err[2]), np.cos(cur_err[2]))
         error_trans = error_trans + np.linalg.norm(cur_err[:2])
         error_rot = error_rot + np.abs(cur_err[2])
-        print(cur_err, error_trans, error_rot)
+
+        # Debug print
+        print(f"Iter {cur_iter}, time {cur_time:.2f}s, compute time {compute_time:.4f}s")
+        print(f"Current state: {cur_state}, Reference state: {cur_ref}")
+        print(f"Current control: {control}")
+        print(f"Current error state: {cur_err}")
+        print(f"Cumulative Error - Trans: {error_trans}, Rot: {error_rot}")
         print("======================")
+
         cur_iter = cur_iter + 1
 
     main_loop_time = time()
@@ -109,4 +114,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
