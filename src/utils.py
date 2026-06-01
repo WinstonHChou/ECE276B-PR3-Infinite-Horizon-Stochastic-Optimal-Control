@@ -45,15 +45,21 @@ THETA_INIT = _th0
 # This function implement the car dynamics
 def car_next_state(time_step, cur_state, control, noise=True):
     theta = cur_state[2]
-    rot_3d_z = np.array([[np.cos(theta), 0], [np.sin(theta), 0], [0, 1]])
-    f = rot_3d_z @ control
+    d_phi = control[1] * time_step / 2  # half step rotation (w*dt/2)
+    phi = theta + d_phi
+    rot_3d_z_exact_integration = np.array(
+        [[time_step * np.sinc(d_phi) * np.cos(phi), 0],
+         [time_step * np.sinc(d_phi) * np.sin(phi), 0],
+         [0, time_step]]
+    )
+    F = rot_3d_z_exact_integration @ control
     w_xy = np.random.normal(0, SIGMA[0], 2)
     w_theta = np.random.normal(0, SIGMA[2], 1)
     w = np.concatenate((w_xy, w_theta))
     if noise:
-        return cur_state + time_step * f.flatten() + w
+        return cur_state + F.flatten() + w
     else:
-        return cur_state + time_step * f.flatten()
+        return cur_state + F.flatten()
 
 
 def visualize(car_states, ref_traj, obstacles, t, time_step, save=False):
