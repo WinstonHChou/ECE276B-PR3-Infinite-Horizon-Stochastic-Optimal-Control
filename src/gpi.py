@@ -1,23 +1,18 @@
 from dataclasses import dataclass
 import numpy as np
 from value_function import ValueFunction
-from utils import ControllerBase
+from utils import ControllerBase, ConfigBase
+from cec import CECConfig
 import utils
 
 
-@dataclass
-class GpiConfig:
-    traj: callable
-    obstacles: np.ndarray
+@dataclass(kw_only=True)
+class GpiConfig(CECConfig):
     ex_space: np.ndarray
     ey_space: np.ndarray
     eth_space: np.ndarray
     v_space: np.ndarray
     w_space: np.ndarray
-    Q: np.ndarray
-    q: float
-    R: np.ndarray
-    gamma: float
     num_evals: int  # number of policy evaluations in each iteration
     collision_margin: float
     V: ValueFunction  # your value function implementation
@@ -36,9 +31,8 @@ class GpiConfig:
 class GPI(ControllerBase):
     name = "gpi"
     
-    def __init__(self, time_step, config: GpiConfig, *args, **kwargs) -> None:
-        super().__init__(time_step)
-        self.config = config
+    def __init__(self, config: GpiConfig, *args, **kwargs) -> None:
+        super().__init__(config)
         # TODO: other initialization code
 
     def __call__(self, t: int, cur_state: np.ndarray, cur_ref_state: np.ndarray) -> np.ndarray:

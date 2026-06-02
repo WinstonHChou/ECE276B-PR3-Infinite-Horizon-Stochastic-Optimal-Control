@@ -4,9 +4,12 @@ from matplotlib import animation
 from time import time
 from tqdm import tqdm
 from pathlib import Path
+from dataclasses import dataclass
+
 
 BASE_DIR = Path(__file__).parent
 
+WORLD_BOUNDS = [-3, 3, -3, 3]  # [xmin, xmax, ymin, ymax]
 ROBOT_RADIUS = 0.3
 V_MAX = 1
 V_MIN = 0.1
@@ -21,7 +24,6 @@ SIGMA = np.array([0.04, 0.04, 0.004])
 # Reference trajectory parameters
 A = 2.0
 B = 2.0
-
 
 # This function returns the reference point at time step k
 def lemniscate(k):
@@ -180,15 +182,29 @@ def timer(func):
 
     return wrap_func
 
+
+@dataclass(kw_only=True)
+class ConfigBase:
+    dt: float
+    traj_func: callable
+    obstacles: np.ndarray | None = None
+
 class ControllerBase:
     name = ""
-    __slot__ = ('dt')
-    
-    def __init__(self, time_step, *args, **kwargs) -> None:
-        self.dt = time_step
+    def __init__(self, config: ConfigBase, *args, **kwargs) -> None:
+        self.config = config
+        if config.obstacles is not None and len(config.obstacles) > 0:
+            self.cspace_obstacles = self._compute_cspace_obstacles(config.obstacles)
+        else:
+            self.cspace_obstacles = np.array([])
 
     def __call__(self, t: int, cur_state: np.ndarray, cur_ref_state: np.ndarray) -> np.ndarray:
         raise NotImplementedError
+    
+    def _compute_cspace_obstacles(self, obstacles):
+        cspace_obstacles = np.copy(obstacles)
+        cspace_obstacles[:, 2] += ROBOT_RADIUS
+        return np.array(cspace_obstacles)
 
 # This class implements a simple P controller
 class SimpleController(ControllerBase):

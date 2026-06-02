@@ -1,14 +1,16 @@
 from time import time
 import numpy as np
 from utils import *
-# from cec import CEC
+from cec import CEC, CECConfig
+# from gpi import GPI, GpiConfig
 from mujoco_car import MujocoCarSim
 import argparse
 
 
 CONTROLLER_LOOKUP = {
-    SimpleController.name: SimpleController,
-    # CEC.name: CEC,
+    SimpleController.name: (SimpleController, ConfigBase),
+    CEC.name: (CEC, CECConfig),
+    # GPI.name: (GPI, GpiConfig),
 }
 
 parser = argparse.ArgumentParser()
@@ -50,8 +52,18 @@ def main():
         mujoco_sim = MujocoCarSim()
 
     # Initialize controller
-    controller_cls = CONTROLLER_LOOKUP[args.controller]
-    controller = controller_cls(time_step=TIME_STEP)
+    controller_cls, config_cls = CONTROLLER_LOOKUP[args.controller]
+    config = config_cls(
+        dt=TIME_STEP,
+        traj_func=traj,
+        obstacles=obstacles,
+        T=10,  # MPC horizon
+        Q=np.diag([1.0, 1.0]),
+        R=np.diag([0.1, 0.1]),
+        terminal_Q=np.diag([10.0, 10.0]),
+        gamma=0.95,
+    )
+    controller = controller_cls(config)
 
     # Main loop
     while cur_iter * TIME_STEP < SIM_TIME:
