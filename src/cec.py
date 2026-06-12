@@ -12,10 +12,10 @@ def casadi_sinc(x):
 class CECConfig(ConfigBase):
     T: int
     Q: np.ndarray
-    q: float = 1.0
+    q: float
     R: np.ndarray
     terminal_Q: np.ndarray
-    terminal_q: float = 1.0
+    terminal_q: float
     gamma: float
 
 class CEC(ControllerBase):
@@ -139,7 +139,7 @@ class CEC(ControllerBase):
         """
         ref_traj = []
         for i in range(self.config.T + 1):
-            ref_traj.append(self.config.traj_func(t + i))
+            ref_traj.append(self.config.traj_func((t + i) * self.config.dt))
         return np.array(ref_traj)
     
     def _car_error_kinematics(self, cur_err_state, control, cur_ref_state, next_ref_state):

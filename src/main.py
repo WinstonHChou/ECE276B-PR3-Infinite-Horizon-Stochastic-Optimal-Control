@@ -7,10 +7,45 @@ from mujoco_car import MujocoCarSim
 import argparse
 
 
+TRAJ_FUNC = lemniscate
+# Obstacles in the environment (x, y, radius)
+OBSTACLES = np.array([
+    [2.35, 0.95, 0.5],
+    [-2.35, -0.95, 0.5],
+    [1.0, 0.0, 0.5],
+    [-1.0, 0.0, 0.5],
+])
+
 CONTROLLER_LOOKUP = {
     SimpleController.name: (SimpleController, ConfigBase),
-    CEC.name: (CEC, CECConfig),
-    # GPI.name: (GPI, GpiConfig),
+    CEC.name: (CEC, CECConfig(
+        dt=TIME_STEP,
+        traj_func=TRAJ_FUNC,
+        obstacles=OBSTACLES,
+        T=10,  # MPC horizon
+        Q=np.diag([1.0, 1.0]),
+        q=1.0,
+        R=np.diag([0.1, 0.1]),
+        terminal_q=1.0,
+        terminal_Q=np.diag([10.0, 10.0]),
+        gamma=0.95,
+    )),
+    # GPI.name: (GPI, GpiConfig(
+    #     dt=TIME_STEP,
+    #     traj_func=TRAJ_FUNC,
+    #     obstacles=OBSTACLES,
+    #     T=10,  # MPC horizon
+    #     Q=np.diag([1.0, 1.0]),
+    #     q=1.0,
+    #     R=np.diag([0.1, 0.1]),
+    #     terminal_q=1.0,
+    #     terminal_Q=np.diag([10.0, 10.0]),
+    #     gamma=0.95,
+    #     # GPI specific config
+    #     ex_space=np.linspace(WORLD_BOUNDS[0], WORLD_BOUNDS[1], 100),
+    #     ey_space=np.linspace(WORLD_BOUNDS[2], WORLD_BOUNDS[3], 100),
+    #     eth_space=np.linspace(-np.pi, np.pi, 36),
+    # )),
 }
 
 parser = argparse.ArgumentParser()
@@ -23,16 +58,7 @@ SAVE_GIF = args.save
 
 
 def main():
-    # Obstacles in the environment (x, y, radius)
-    obstacles = np.array([
-        [2.35, 0.95, 0.5],
-        [-2.35, -0.95, 0.5],
-        [1.0, 0.0, 0.5],
-        [-1.0, 0.0, 0.5],
-    ])
-
     # Params
-    traj = lemniscate
     ref_traj = []
     error_trans = 0.0
     error_rot = 0.0
@@ -52,25 +78,15 @@ def main():
         mujoco_sim = MujocoCarSim()
 
     # Initialize controller
-    controller_cls, config_cls = CONTROLLER_LOOKUP[args.controller]
-    config = config_cls(
-        dt=TIME_STEP,
-        traj_func=traj,
-        obstacles=obstacles,
-        T=10,  # MPC horizon
-        Q=np.diag([1.0, 1.0]),
-        R=np.diag([0.1, 0.1]),
-        terminal_Q=np.diag([10.0, 10.0]),
-        gamma=0.95,
-    )
-    controller = controller_cls(config)
+    controller_cls, config_obj = CONTROLLER_LOOKUP[args.controller]
+    controller = controller_cls(config_obj)
 
     # Main loop
     while cur_iter * TIME_STEP < SIM_TIME:
         t1 = time()
         # Get reference state
         cur_time = cur_iter * TIME_STEP
-        cur_ref = traj(cur_iter)
+        cur_ref = TRAJ_FUNC(cur_time)
         # Save current state and reference state for visualization
         ref_traj.append(cur_ref)
         car_states.append(cur_state)
@@ -123,7 +139,7 @@ def main():
     ref_traj = np.array(ref_traj)
     car_states = np.array(car_states)
     times = np.array(times)
-    visualize(car_states, ref_traj, obstacles, times, TIME_STEP, save=SAVE_GIF)
+    visualize(car_states, ref_traj, OBSTACLES, times, TIME_STEP, save=SAVE_GIF)
 
 
 if __name__ == "__main__":

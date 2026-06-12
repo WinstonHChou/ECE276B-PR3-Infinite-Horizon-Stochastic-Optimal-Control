@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 import numpy as np
 from value_function import ValueFunction
-from utils import ControllerBase, ConfigBase
+from utils import ControllerBase
 from cec import CECConfig
 import utils
 

@@ -16,21 +16,19 @@ V_MIN = 0.1
 W_MAX = 1
 W_MIN = -1
 
-TIME_STEP = 0.5  # time between steps in seconds
-T = 100
-SIM_TIME = 120  # simulation time
+TIME_STEP = 0.5     # time between steps in seconds
+PERIOD = 100 * 0.5  # period of the reference trajectory
+SIM_TIME = 120      # simulation time
 SIGMA = np.array([0.04, 0.04, 0.004])
 
 # Reference trajectory parameters
 A = 2.0
 B = 2.0
 
-# This function returns the reference point at time step k
-def lemniscate(k):
-    """Reference trajectory: x = A sin(at), y = B sin(2at), periodic with period T."""
-    k = k % T
-    t = k * TIME_STEP
-    a = 2 * np.pi / (T * TIME_STEP)
+# This function returns the reference point at time t
+def lemniscate(t):
+    """Reference trajectory: x = A sin(at), y = B sin(2at), periodic with period T = 100 * 0.5 sec."""
+    a = 2 * np.pi / PERIOD
     xref = A * np.sin(a * t)
     yref = B * np.sin(2 * a * t)
     vx = A * a * np.cos(a * t)
@@ -39,8 +37,8 @@ def lemniscate(k):
     return [xref, yref, thetaref]
 
 
-# Initial state on the reference trajectory at k=2
-_x0, _y0, _th0 = lemniscate(2)
+# Initial state on the reference trajectory at t = 1.0
+_x0, _y0, _th0 = lemniscate(t=1.0)
 X_INIT = _x0
 Y_INIT = _y0
 THETA_INIT = _th0
