@@ -333,7 +333,7 @@ class GPI(ControllerBase):
         Policy improvement step of the GPI algorithm.
         """
         policy_changed = False
-        for t in utils.tqdm(range(self.config.T - 1, -1, -1)):
+        for t in utils.tqdm(range(self.config.T - 1)):
             next_t = (t + 1) % self.config.T  # link to the next phase for periodic infinite horizon
             new_policy, changed = self._jit_policy_improvement(
                 self.stage_costs[t], 
@@ -397,7 +397,7 @@ class GPI(ControllerBase):
         Policy evaluation step of the GPI algorithm.
         """
         for _ in utils.tqdm(range(num_evals)):
-            for t in range(self.config.T - 1, -1, -1):
+            for t in range(self.config.T - 1):
                 next_t = (t + 1) % self.config.T  # link to the next phase for periodic infinite horizon
                 self.V.value[t] = self._jit_policy_evaluation(
                     self.stage_costs[t], 

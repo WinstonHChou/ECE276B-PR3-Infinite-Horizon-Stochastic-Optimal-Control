@@ -38,7 +38,7 @@ w3chou@ucsd.edu}
 \maketitle
 
 \begin{abstract}
-This report presents the implementation and evaluation of two optimal control strategies for trajectory tracking of a unicycle car model in a stochastic environment with obstacles. We first implement a receding-horizon Certainty Equivalent Control (CEC) scheme that solves a Non-Linear Programming (NLP) problem at each time step. Second, we utilize Generalized Policy Iteration (GPI) to solve the infinite-horizon stochastic optimal control problem through value iteration on a discretized state space. We compare the performance of both methods in tracking a complex lemniscate trajectory while maintaining safety. Our results highlight the trade-offs between online optimization (CEC) and offline value function pre-computation (GPI) regarding tracking accuracy and real-time feasibility.
+This report presents the implementation and evaluation of two optimal control strategies for trajectory tracking of a unicycle car model in a stochastic environment with obstacles. We first implement a receding-horizon Certainty Equivalent Control (CEC) scheme that solves a Non-Linear Programming (NLP) problem at each time step. Second, we utilize Generalized Policy Iteration (GPI) to solve the infinite-horizon stochastic optimal control problem through value iteration on a discretized state space. We compare the performance of both methods in tracking a complex lemniscate trajectory while maintaining safety. Our results highlight the trade-offs between online optimization (CEC) and offline optimal value function $V^*$ pre-computation (GPI) regarding tracking accuracy and real-time feasibility.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -52,37 +52,52 @@ Autonomous robot navigation requires precise trajectory tracking capabilities al
 We explore two foundational approaches in optimal control:
 \begin{enumerate}
     \item \textbf{Certainty Equivalent Control (CEC):} A receding-horizon approach that simplifies the stochastic control problem by solving a deterministic optimization problem at each step. By ignoring noise and assuming the most likely transition, CEC leverages efficient NLP solvers to find locally optimal control sequences.
-    \item \textbf{Generalized Policy Iteration (GPI):} A dynamic programming-based approach that addresses the stochasticity directly. By discretizing the error-state space, GPI computes a value function and an optimal policy offline that minimizes the expected infinite-horizon discounted cost.
+    \item \textbf{Generalized Policy Iteration (GPI):} A dynamic programming-based approach that addresses the stochasticity directly. By discretizing the error-state space, GPI computes an optimal value function $V^*$ and an optimal policy $\pi^*$ offline that minimizes the expected infinite-horizon discounted cost.
 \end{enumerate}
 
 This report details the mathematical formulation of the unicycle dynamics and the tracking objective, describes the implementation of both algorithms, and provides a comparative analysis of their tracking performance and computational characteristics.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.48\textwidth]{../src/fig/cec_dt_0.5.png}
-    \caption{Simulation of the unicycle car tracking a lemniscate trajectory in an environment with obstacles using Certainty Equivalent Control (CEC).}
+    \includegraphics[width=0.48\textwidth]{../src/fig/cec_mujoco_dt_0.5.png}
+    \caption{Simulation of the unicycle car tracking a lemniscate trajectory in an environment with obstacles using Certainty Equivalent Control (CEC) with Mujoco Simulator.}
     \label{fig:lemniscate_tracking}
 \end{figure}
 
 \section{Problem Statement}
 
-The robot is modeled as a unicycle car operating in a 2D environment $\mathcal{W} \subset \mathbb{R}^2$ with state $x_t \in \mathbb{R}^3$ and control $u_t \in \mathcal{U} \subset \mathbb{R}^2$.
+The robot is modeled as a unicycle car operating in a 2D environment $\mathcal{F} \subset \mathbb{R}^2$ with state $x_t \in \mathbb{R}^3$ and control $u_t \in \mathcal{U} \subset \mathbb{R}^2$.
 
-\subsection{Robot Dynamics}
+\subsection{Robot Kinematics}
 The continuous-time kinematics are given by:
 \begin{equation}
     \dot{x} = \begin{bmatrix} \dot{p}_x \\ \dot{p}_y \\ \dot{\theta} \end{bmatrix} = \begin{bmatrix} v \cos \theta \\ v \sin \theta \\ \omega \end{bmatrix}
 \end{equation}
 where $v$ and $\omega$ are the linear and angular velocities. The discrete-time stochastic dynamics used in this project assume exact integration over a time step $\Delta t$:
 \begin{equation}
-    x_{k+1} = f(x_k, u_k) + w_k, \quad w_k \sim \mathcal{N}(0, \Sigma)
+    x_{k+1} = f_d(x_k, u_k) + w_k, \quad w_k \sim \mathcal{N}(0, \Sigma)
 \end{equation}
-where $w_k$ represents the process noise.
+where $w_k$ represents the process noise. The nominal transition function $f_d(x_k, u_k)$ is computed by exactly integrating the unicycle kinematics over the time step $\Delta t$, assuming constant control inputs $v_k$ and $\omega_k$:
+\begin{equation}
+    f_d(x_k, u_k) = x_k + \begin{bmatrix}
+        \Delta t \text{sinc}(\frac{\omega_k \Delta t}{2}) \cos(\theta_k + \frac{\omega_k \Delta t}{2}) & 0 \\
+        \Delta t \text{sinc}(\frac{\omega_k \Delta t}{2}) \sin(\theta_k + \frac{\omega_k \Delta t}{2}) & 0 \\
+        0 & \Delta t
+    \end{bmatrix} \begin{bmatrix} v_k \\ \omega_k \end{bmatrix}
+\end{equation}
+where $\text{sinc}(x) = \sin(x)/x$ is the unnormalized sinc function.
+
+\subsection{Error Kinematics}
+To track the reference trajectory $x_{ref}(t)$, we define the tracking error as $e_k = x_k - x_{ref}(k\Delta t)$. The error kinematics describe the evolution of this error over time. Given the discrete-time dynamics $x_{k+1} = f_d(x_k, u_k) + w_k$, the error at the next time step is:
+\begin{equation}
+    e_{k+1} = f_d(e_k + x_{ref, k}, u_k) - x_{ref, k+1} + w_k
+\end{equation}
+where $x_{ref, k} = x_{ref}(k\Delta t)$. This formulation allows the optimal control problem to be expressed in terms of the error state, where the goal is to drive $e_k$ to the origin.
 
 \subsection{Objective Function}
-The goal is to follow a reference trajectory $x_{ref}(t)$. We define the tracking error as $e_k = x_k - x_{ref}(k \Delta t)$. The objective is to minimize the expected infinite-horizon discounted cost:
+The goal is to minimize the expected infinite-horizon discounted cost:
 \begin{equation}
-    J(x_0) = \mathbb{E} \left[ \sum_{k=0}^{\infty} \gamma^k \ell(e_k, u_k) \right]
+    V*(x_0) = \min_{u_0, u_1, \ldots} \mathbb{E} \left[ \sum_{k=0}^{\infty} \gamma^k \ell(e_k, u_k) \right]
 \end{equation}
 where $\gamma \in (0, 1)$ is the discount factor and $\ell(e, u)$ is the stage cost:
 \begin{equation}
@@ -97,46 +112,135 @@ The control inputs are constrained within $[v_{min}, v_{max}]$ and $[\omega_{min
 \end{equation}
 where $r_j$ is the obstacle radius and $r_{robot}$ is the robot's collision margin.
 
+\subsection{System Parameters}
+The physical and simulation parameters used in this project are summarized in Table~\ref{tab:params}. These values define the robot's capabilities, the environment's noise characteristics, and the optimization objective.
+
+\begin{table}[H]
+    \centering
+    \caption{Robot and Simulation Parameters}
+    \label{tab:params}
+    \begin{tabular}{|l|c|l|}
+        \hline
+        \textbf{Parameter} & \textbf{Symbol} & \textbf{Value} \\
+        \hline
+        Time Step & $\Delta t$ & $0.5$ s \\
+        Robot Radius & $r_{robot}$ & $0.3$ m \\
+        Linear Velocity Limits & $[v_{min}, v_{max}]$ & $[0.1, 1.0]$ m/s \\
+        Angular Velocity Limits & $[\omega_{min}, \omega_{max}]$ & $[-1.0, 1.0]$ rad/s \\
+        Process Noise (Pos) & $\sigma_{x,y}$ & $0.04$ \\
+        Process Noise (Rot) & $\sigma_{\theta}$ & $0.004$ \\
+        Discount Factor & $\gamma$ & $0.95$ \\
+        State Weights & $Q, q$ & $I_2, 1.0$ \\
+        Control Weights (CEC) & $R$ & $\text{diag}(0.1, 0.1)$ \\
+        Control Weights (GPI) & $R$ & $\text{diag}(0.01, 0.01)$ \\
+        \hline
+    \end{tabular}
+\end{table}
+
 \section{Technical Approach}
 
 The trajectory tracking problem is addressed using two distinct paradigms: receding-horizon optimization and infinite-horizon value iteration.
 
 \subsection{Certainty Equivalent Control (CEC)}
-CEC simplifies the stochastic optimal control problem by assuming that process noise is zero during the planning horizon. At each time step $k$, we solve a finite-horizon deterministic optimal control problem:
+CEC simplifies the stochastic optimal control problem by assuming that process noise is zero ($w_t = 0$) during the planning horizon. At each time step $k$, we approximate the infinite-horizon problem by solving a finite-horizon deterministic Non-Linear Program (NLP).
+
+\begin{algorithm}[H]
+\caption{Receding-Horizon CEC}
+\begin{algorithmic}[1]
+\STATE Measure the current state $x_k$.
+\STATE Formulate a finite-horizon NLP using $x_k$ and the reference trajectory.
+\STATE Solve the NLP with CasADi/IPOPT.
+\STATE Apply the first control input $u_k^*$.
+\STATE Propagate the system to obtain $x_{k+1}$.
+\STATE Repeat at the next time step.
+\end{algorithmic}
+\end{algorithm}
+
+\subsubsection{NLP Formulation}
+We define the decision variables as the sequence of controls $\mathbf{U} = [u_{k}^T, \dots, u_{k+T-1}^T]^T$ and error states $\mathbf{E} = [e_{k}^T, \dots, e_{k+T}^T]^T$. The optimization problem is:
 \begin{equation}
-    \min_{u_{k:k+T-1}} \sum_{i=k}^{k+T-1} \gamma^{i-k} \ell(e_i, u_i) + \gamma^T \ell_{term}(e_{k+T})
+    \min_{\mathbf{U}, \mathbf{E}} \sum_{i=k}^{k+T-1} \gamma^{i-k} \ell(e_i, u_i) + \gamma^T \ell_{term}(e_{k+T})
 \end{equation}
-subject to the unicycle dynamics and control/state constraints. We implement this using the CasADi framework with the $ipopt$ solver. Only the first control $u_k^*$ is applied, and the optimization is repeated at the next time step.
+subject to:
+\begin{equation}
+\begin{aligned}
+e_{i+1} &= f_d(e_i + x_{ref, i}, u_i) - x_{ref, i+1}, & \forall i \in \{k, \dots, k+T-1\} \\
+u_{i} &\in \mathcal{U}, & \forall i \in \{k, \dots, k+T-1\} \\
+e_i + x_{ref, i} &\in \mathcal{F}, & \forall i \in \{k, \dots, k+T\}
+\end{aligned}
+\end{equation}
+where $\mathcal{F}$ represents the safe set defined by the workspace boundaries $[-3, 3] \times [-3, 3]$ and the exclusion of four circular obstacles centered at (2.35, 0.95), (-2.35, -0.95), (1.0, 0.0), and (-1.0, 0.0), each with a physical radius of 0.5 m supplemented by the 0.3 m robot radius. The terminal cost $\ell_{term}(e) = e_{pos}^T Q_{term} e_{pos} + q_{term}(1 - \cos e_{\theta})^2$ is chosen to encourage tracking beyond the horizon. We utilize the CasADi framework with the $ipopt$ interior-point solver to solve this NLP in a receding-horizon fashion.
+
+\subsubsection{Optimality and Completeness}
+CEC assumes its estimates of the future are certain, which makes it only \textit{locally optimal} in the stochastic setting. Since the unicycle dynamics and obstacle constraints are non-convex, the NLP solver may converge to a local minimum rather than the global optimum. Furthermore, the approach lacks \textit{completeness} guarantees; the solver might fail to find a feasible path even if one exists, particularly when the robot is in close proximity to obstacles or if the horizon $T$ is insufficient to see through a narrow passage. However, in practice, the receding-horizon nature provides high-frequency feedback that compensates for moderate disturbances.
 
 \subsection{Generalized Policy Iteration (GPI)}
-GPI addresses the infinite-horizon problem by pre-computing a stationary optimal policy $\pi^*(e)$. The continuous error-state space $\mathcal{E}$ is discretized into a finite grid $\mathcal{S}_{grid}$. We perform two interleaved steps:
+GPI addresses the infinite-horizon problem by pre-computing a stationary optimal policy $\pi^*(e)$ and the optimal value function $V^*(e)$. The continuous error-state space $\mathcal{E}$ is discretized into a finite grid $\mathcal{S}_{grid}$. We perform two interleaved steps:
 \begin{enumerate}
     \item \textbf{Policy Evaluation:} Estimate the value function $V^\pi$ for the current policy $\pi$.
-    \item \textbf{Policy Improvement:} Update the policy by selecting the action that minimizes the one-step lookahead cost:
+    \item \textbf{Policy Improvement:} Update the policy by selecting the action that minimizes the one-step lookahead cost to approach the optimal value $V^*$:
     \begin{equation}
         \pi'(e) = \arg\min_{u \in \mathcal{U}} \left\{ \ell(e, u) + \gamma \sum_{e'} P(e'|e, u) V^\pi(e') \right\}
     \end{equation}
 \end{enumerate}
-To scale to large grids, we utilize Numba-accelerated JIT compilation for the transition matrix and cost computations, and enforce periodic wrap-around ($V_T = V_0$) for the lemniscate trajectory.
+
+\begin{algorithm}[H]
+\caption{Offline GPI for Periodic Tracking}
+\begin{algorithmic}[1]
+\STATE Discretize the error-state space and control space.
+\STATE Initialize $\pi$ and $V^\pi$ on the grid.
+\REPEAT
+\STATE Evaluate the current policy over the discretized state space.
+\STATE Improve the policy using one-step lookahead and the Bellman update.
+\UNTIL the policy converges or a fixed iteration budget is reached.
+\STATE Execute the resulting policy online by table lookup.
+\end{algorithmic}
+\end{algorithm}
+
+\subsubsection{State and Control Discretization}
+The continuous error-state space $\mathcal{E}$ is discretized using a multi-resolution multiband grid for position components ($e_x, e_y$) and uniform spacing for orientation error ($e_\theta$). This multi-resolution approach provides high resolution near the reference trajectory to preserve tracking accuracy while maintaining computational tractability across the rest of the state space. The control space $\mathcal{U}$ is similarly discretized into linear and angular velocity components.
+
+\subsubsection{Scaling and Collision Avoidance}
+To handle high dimensionality, we utilize Numba's \texttt{@njit} compilation and parallelized computation (\texttt{prange}) for pre-computing the transition matrix and conducting value function updates. The stage cost used by GPI augments tracking and control effort with an obstacle-avoidance penalty of the form
+\begin{equation}
+    \ell_{\mathrm{GPI}}(e, u) = \ell(e, u) + \lambda_{\mathrm{obs}} \sum_{j=1}^{n} \exp\!\left(-\frac{d_j(e)^2}{\sigma_{\mathrm{obs}}^2}\right) + \lambda_{\mathrm{coll}} \mathds{1}_{\mathrm{collision}}(e)
+\end{equation}
+where $d_j(e)$ is the distance from the robot to obstacle $j$, $\lambda_{\mathrm{obs}}$ controls the soft avoidance term, and $\lambda_{\mathrm{coll}}$ is a large collision penalty used to make unsafe grid states unattractive. This formulation encourages the robot to maintain a safe margin from obstacles without sacrificing tracking performance, but the weights must be tuned carefully because overly large collision penalties can make the policy excessively conservative while too-small penalties lead to unsafe shortcuts. Finally, periodic boundary conditions are enforced by setting $V^*(0, e) = V^*(T, e)$, allowing for the calculation of a stationary optimal policy for the periodic lemniscate trajectory.
 
 \section{Results}
+All simulation results were generated with a time step of $\Delta t = 0.5$ s. In the numerical simulator, which uses the exact discrete-time integration in \texttt{car\_next\_state()}, CEC tracks the lemniscate trajectory smoothly and remains stable around the obstacle field. This is shown in Fig.~\ref{fig:cec_numeric}, where the controller follows the reference path closely while maintaining feasibility.
 
-\subsection{CEC Performance}
-The CEC controller demonstrates robust tracking of the lemniscate trajectory in deterministic settings. However, as process noise increases, the receding-horizon solution may drift if the horizon $T$ is too short.
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.48\textwidth]{../src/fig/cec_dt_0.5.png}
+    \caption{CEC trajectory in the numerical simulator with exact integration and $\Delta t = 0.5$ s.}
+    \label{fig:cec_numeric}
+\end{figure}
 
-\subsection{GPI Performance}
-The GPI policy provides a fast lookup-based control law. Its performance is heavily dependent on the discretization resolution of the error states. We analyze the tracking error convergence and the impact of the discount factor $\gamma$.
+We also tested the same controller in Google DeepMind's MuJoCo simulator. The resulting motion appears smoother, as shown in Fig.~\ref{fig:cec_mujoco}, which is expected because the MuJoCo model captures vehicle geometry and continuous contact effects more faithfully than the simplified kinematic rollout. Although the MuJoCo vehicle is implemented as a car-like Ackermann drive rather than an ideal unicycle, the two models share the same nonholonomic constraint structure, so the tracking behavior is still directly comparable at the level of planar motion and heading evolution.
 
-\subsection{Comparative Analysis}
-We compare CEC and GPI across several metrics:
-\begin{itemize}
-    \item \textbf{Computational Cost:} Online optimization time (CEC) vs. offline pre-computation time and online lookup time (GPI).
-    \item \textbf{Tracking Error:} Cumulative translation and rotation error.
-\end{itemize}
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.48\textwidth]{../src/fig/cec_mujoco_dt_0.5.png}
+    \caption{CEC trajectory in Google DeepMind's MuJoCo simulator. The motion looks smoother than the purely numerical rollout.}
+    \label{fig:cec_mujoco}
+\end{figure}
+
+Compared with CEC, the GPI implementation is still unfinished and should be viewed as a preliminary baseline rather than a fully tuned controller. Offline, it already reflects the structure of the infinite-horizon problem through value iteration on a discretized state space, but its current performance is limited by grid resolution, transition approximation, and the remaining implementation work needed to make it as mature as the CEC pipeline. Fig.~\ref{fig:gpi_prelim} shows the current GPI rollout; it captures the intended lemniscate shape but is less consistent near sharp turns and obstacle-adjacent regions.
+
+The main implementation difficulty is the discretization itself. The state space must be fine enough to resolve the periodic lemniscate tracking task, especially near the self-intersection and the obstacle boundaries, but a fine grid quickly makes the transition tensor and policy-evaluation loop expensive. The control space has the same issue: coarse action grids make the policy brittle, while denser grids increase the number of lookups in every improvement step and amplify the offline computation cost. On top of that, the loss weights are difficult to tune over a long periodic horizon because the controller must balance tracking, smoothness, and safety at every point along the cycle. If the tracking terms dominate, the policy cuts too aggressively through narrow regions; if the collision-avoidance terms dominate, the policy becomes conservative and may drift away from the reference. In practice, the best GPI behavior comes from a compromise between discretization resolution and penalty weights, and that compromise is much harder to tune than the receding-horizon CEC setup.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.48\textwidth]{../src/fig/gpi_dt_0.5.png}
+    \caption{Preliminary GPI rollout at $\Delta t = 0.5$ s. The implementation is not yet as complete or as well tuned as CEC.}
+    \label{fig:gpi_prelim}
+\end{figure}
+
+Overall, the experiments suggest that CEC is the more complete and reliable controller in the current project state: it is already working well in both the exact numerical simulator and MuJoCo, while GPI remains an incomplete offline optimal-control baseline whose final performance will depend on further refinement of the discretization and policy-iteration loop.
 
 \section{Conclusion}
-
-In this project, we implemented and compared CEC and GPI for trajectory tracking of a unicycle robot. CEC offers flexibility in handling obstacle constraints through online optimization, while GPI provides a computationally efficient feedback law once the value function has converged. 
+In this project, we compared receding-horizon optimization (CEC) and value iteration (GPI) for unicycle trajectory tracking. CEC is the more mature solution in our implementation: it works well at $\Delta t = 0.5$ s, tracks the reference accurately in the exact numerical simulator, and also transfers cleanly to MuJoCo. GPI remains a useful conceptual benchmark for infinite-horizon stochastic control, but it is still unfinished and would require further tuning to match the practical reliability of CEC. The main trade-off is therefore between the online computational cost of CEC and the offline development effort needed to complete a strong GPI implementation.
 
 \begin{thebibliography}{00}
 \bibitem{b1} N. Atanasov, ``ECE276B: Planning \& Learning in Robotics -- Schedule,'' University of California San Diego.
