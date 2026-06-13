@@ -57,8 +57,8 @@ class GPI(ControllerBase):
         # Initialize the reference trajectory
         self.ref_traj = self._compute_reference_trajectory()
         
-        # Initialize the value function (T+1 to include terminal value)
-        self.V = self.config.V_cls(config.T + 1, self.ex_space, self.ey_space, self.eth_space)
+        # Initialize the value function
+        self.V = self.config.V_cls(self.config.T, self.ex_space, self.ey_space, self.eth_space)
         
         # Initialize dimensions of state and control spaces for later use
         self.nx, self.ny, self.nth = len(self.ex_space), len(self.ey_space), len(self.eth_space)
@@ -130,7 +130,7 @@ class GPI(ControllerBase):
             ref_traj: reference trajectory over the horizon
         """
         ref_traj = []
-        for i in range(self.config.T + 1):
+        for i in range(self.config.T):
             ref_traj.append(self.config.traj_func((i) * self.config.dt))
         return np.array(ref_traj)
     
@@ -223,7 +223,7 @@ class GPI(ControllerBase):
         for t in utils.tqdm(range(self.config.T)):
             # compute the reference state at time t and t+1 for computing the transition matrix
             cur_ref_state = self.ref_traj[t]
-            next_ref_state = self.ref_traj[t + 1]
+            next_ref_state = self.ref_traj[(t + 1) % self.config.T]  # link to the next phase for periodic infinite horizon
 
             # construct all combinations of current error states and control inputs for computing the transition matrix
             ex_ids, ey_ids, eth_ids, v_ids, w_ids = np.meshgrid(
@@ -309,7 +309,7 @@ class GPI(ControllerBase):
         if self.value_dir.exists():
             self.V.value = self.load_value_function()
         else:
-            self.V.value = np.zeros((self.config.T + 1, self.nx, self.ny, self.nth))
+            self.V.value = np.zeros((self.config.T, self.nx, self.ny, self.nth))
 
     # def evaluate_value_function(self):
     #     """
@@ -334,7 +334,7 @@ class GPI(ControllerBase):
         """
         policy_changed = False
         for t in utils.tqdm(range(self.config.T - 1, -1, -1)):
-            next_t = t + 1
+            next_t = (t + 1) % self.config.T  # link to the next phase for periodic infinite horizon
             new_policy, changed = self._jit_policy_improvement(
                 self.stage_costs[t], 
                 self.transition_matrix[t], 
@@ -398,7 +398,7 @@ class GPI(ControllerBase):
         """
         for _ in utils.tqdm(range(num_evals)):
             for t in range(self.config.T - 1, -1, -1):
-                next_t = t + 1
+                next_t = (t + 1) % self.config.T  # link to the next phase for periodic infinite horizon
                 self.V.value[t] = self._jit_policy_evaluation(
                     self.stage_costs[t], 
                     self.transition_matrix[t], 
@@ -450,10 +450,6 @@ class GPI(ControllerBase):
         self.init_value_function()
         self.init_policy()
         for iter in range(num_iters):
-            # For periodic infinite horizon, link terminal value to the start of the next period
-            # V[T] = V[0] might be too aggressive if not converged, but we can do it after policy evaluation
-            self.V.value[self.config.T] = self.V.value[0]
-
             print(f"GPI Iteration {iter + 1}/{num_iters}")
             policy_changed = self.policy_improvement()
             self.policy_evaluation(num_evals=self.config.num_evals)
@@ -555,9 +551,7 @@ class GPI(ControllerBase):
         inv_order[order] = np.arange(G)
 
         nearest_sorted_id = np.where(choose_left, left, right)
-        nearest_orig_id = inv_order[nearest_sorted_id]
-
-        return nearest_orig_id
+        return inv_order[nearest_sorted_id]
     
     @staticmethod
     def _angle_wrap(angles):
@@ -582,7 +576,7 @@ class GPI(ControllerBase):
         Returns:
             next_err_states: next error states for the current error state hypothesis (N, 3)
         """
-        theta = cur_err_states[:, 2] + cur_ref_state[2]
+        theta = GPI._angle_wrap(cur_err_states[:, 2] + cur_ref_state[2])
         d_phi = controls[:, 1] * dt / 2  # half step rotation (w*dt/2)
         phi = theta + d_phi
 
@@ -618,8 +612,6 @@ class GPI(ControllerBase):
             # mirror to negative side
             g = np.concatenate([-g_pos[::-1], g_pos])
             grids.append(g)
-
         # Always include 0
         grids.append(np.array([0.0]))
-
         return np.unique(np.concatenate(grids))
