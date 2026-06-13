@@ -130,9 +130,17 @@ The physical and simulation parameters used in this project are summarized in Ta
         Process Noise (Pos) & $\sigma_{x,y}$ & $0.04$ \\
         Process Noise (Rot) & $\sigma_{\theta}$ & $0.004$ \\
         Discount Factor & $\gamma$ & $0.95$ \\
+        CEC Horizon & $T_{\mathrm{CEC}}$ & $10$ \\
+        GPI Horizon & $T_{\mathrm{GPI}}$ & $\lfloor 50/0.5 \rfloor = 100$ \\
         State Weights & $Q, q$ & $I_2, 1.0$ \\
         Control Weights (CEC) & $R$ & $\text{diag}(0.1, 0.1)$ \\
-        Control Weights (GPI) & $R$ & $\text{diag}(0.01, 0.01)$ \\
+        Control Weights (GPI) & $R$ & $\text{diag}(0.5, 0.5)$ \\
+        GPI Position Grid Bands & $e_{x},e_{y}$ & $(0\!\to\!1:7), (1\!\to\!3:4), (3\!\to\!6:3)$ \\
+        GPI Heading Grid Size & $|\mathcal{E}_{\theta}|$ & $72$ \\
+        GPI Control Grid Size & $|\mathcal{V}|, |\mathcal{W}|$ & $8, 15$ \\
+        Collision Margin (GPI) & $d_{\mathrm{margin}}$ & $0.0$ \\
+        Collision Cost Weight (GPI) & $\lambda_{\mathrm{coll}}$ & $10^4$ \\
+        Reported GPI Rollout Mode & -- & Deterministic (no process noise) \\
         \hline
     \end{tabular}
 \end{table}
@@ -175,7 +183,7 @@ where $\mathcal{F}$ represents the safe set defined by the workspace boundaries 
 CEC assumes its estimates of the future are certain, which makes it only \textit{locally optimal} in the stochastic setting. Since the unicycle dynamics and obstacle constraints are non-convex, the NLP solver may converge to a local minimum rather than the global optimum. Furthermore, the approach lacks \textit{completeness} guarantees; the solver might fail to find a feasible path even if one exists, particularly when the robot is in close proximity to obstacles or if the horizon $T$ is insufficient to see through a narrow passage. However, in practice, the receding-horizon nature provides high-frequency feedback that compensates for moderate disturbances.
 
 \subsection{Generalized Policy Iteration (GPI)}
-GPI addresses the infinite-horizon problem by pre-computing a stationary optimal policy $\pi^*(e)$ and the optimal value function $V^*(e)$. The continuous error-state space $\mathcal{E}$ is discretized into a finite grid $\mathcal{S}_{grid}$. We perform two interleaved steps:
+GPI addresses the infinite-horizon problem by pre-computing a stationary optimal policy $\pi^*(e)$ and the optimal value function $V^*(e)$. The continuous error-state space $\mathcal{E}$ is discretized into a finite grid $\mathcal{S}_{grid}$. In the current implementation used for the reported rollouts, GPI is evaluated with deterministic transitions (process noise disabled), which simplifies the Bellman backup but does not yet capture full stochastic uncertainty. We perform two interleaved steps:
 \begin{enumerate}
     \item \textbf{Policy Evaluation:} Estimate the value function $V^\pi$ for the current policy $\pi$.
     \item \textbf{Policy Improvement:} Update the policy by selecting the action that minimizes the one-step lookahead cost to approach the optimal value $V^*$:
@@ -226,21 +234,42 @@ We also tested the same controller in Google DeepMind's MuJoCo simulator. The re
     \label{fig:cec_mujoco}
 \end{figure}
 
-Compared with CEC, the GPI implementation is still unfinished and should be viewed as a preliminary baseline rather than a fully tuned controller. Offline, it already reflects the structure of the infinite-horizon problem through value iteration on a discretized state space, but its current performance is limited by grid resolution, transition approximation, and the remaining implementation work needed to make it as mature as the CEC pipeline. Fig.~\ref{fig:gpi_prelim} shows the current GPI rollout; it captures the intended lemniscate shape but is less consistent near sharp turns and obstacle-adjacent regions.
+Compared with CEC, the GPI implementation is still unfinished and should be viewed as a preliminary baseline rather than a fully tuned controller. Offline, it already reflects the structure of the infinite-horizon problem through value iteration on a discretized state space, but the current rollout is generated under a deterministic model (no process noise), and performance is still limited by grid resolution, transition approximation, and remaining implementation work needed to make it as mature as the CEC pipeline. Fig.~\ref{fig:gpi_prelim} shows the current GPI rollout; it captures the intended lemniscate shape but is less consistent near sharp turns and obstacle-adjacent regions.
 
 The main implementation difficulty is the discretization itself. The state space must be fine enough to resolve the periodic lemniscate tracking task, especially near the self-intersection and the obstacle boundaries, but a fine grid quickly makes the transition tensor and policy-evaluation loop expensive. The control space has the same issue: coarse action grids make the policy brittle, while denser grids increase the number of lookups in every improvement step and amplify the offline computation cost. On top of that, the loss weights are difficult to tune over a long periodic horizon because the controller must balance tracking, smoothness, and safety at every point along the cycle. If the tracking terms dominate, the policy cuts too aggressively through narrow regions; if the collision-avoidance terms dominate, the policy becomes conservative and may drift away from the reference. In practice, the best GPI behavior comes from a compromise between discretization resolution and penalty weights, and that compromise is much harder to tune than the receding-horizon CEC setup.
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.48\textwidth]{../src/fig/gpi_dt_0.5.png}
+    \includegraphics[width=0.48\textwidth]{../src/fig/gpi_dt_0.5_no_noise.png}
     \caption{Preliminary GPI rollout at $\Delta t = 0.5$ s. The implementation is not yet as complete or as well tuned as CEC.}
     \label{fig:gpi_prelim}
 \end{figure}
 
+To make the comparison explicit, Table~\ref{tab:comp_results} reports the measured runtime and cumulative tracking errors from our runs at $\Delta t = 0.5$ s.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Computation and Tracking Results ($\Delta t = 0.5$ s)}
+    \label{tab:comp_results}
+    \footnotesize
+    \setlength{\tabcolsep}{4pt}
+    \begin{tabular}{lccc}
+        \hline
+        \textbf{Method} & \textbf{Avg ms} & \textbf{$E_{\mathrm{trans}}$} & \textbf{$E_{\mathrm{rot}}$} \\
+        \hline
+        CEC (Numerical) & 69.22 & 55.14 & 43.74 \\
+        CEC (MuJoCo) & 692.83 & 65.94 & 28.99 \\
+        GPI (No-noise) & 0.37 & 142.52 & 94.99 \\
+        \hline
+    \end{tabular}
+\end{table}
+
+These results show the current trade-off in this project stage: deterministic GPI provides very fast online control lookup but significantly larger tracking errors in its present form, while CEC yields better tracking in both simulators at higher per-step compute cost. MuJoCo-CEC is slower due to simulator overhead and richer dynamics, but still maintains competitive tracking behavior. A complete infinite-horizon stochastic solution should explicitly incorporate a stochastic transition model in the GPI backups; however, due to project time constraints, this full stochastic extension was not implemented in the current work.
+
 Overall, the experiments suggest that CEC is the more complete and reliable controller in the current project state: it is already working well in both the exact numerical simulator and MuJoCo, while GPI remains an incomplete offline optimal-control baseline whose final performance will depend on further refinement of the discretization and policy-iteration loop.
 
 \section{Conclusion}
-In this project, we compared receding-horizon optimization (CEC) and value iteration (GPI) for unicycle trajectory tracking. CEC is the more mature solution in our implementation: it works well at $\Delta t = 0.5$ s, tracks the reference accurately in the exact numerical simulator, and also transfers cleanly to MuJoCo. GPI remains a useful conceptual benchmark for infinite-horizon stochastic control, but it is still unfinished and would require further tuning to match the practical reliability of CEC. The main trade-off is therefore between the online computational cost of CEC and the offline development effort needed to complete a strong GPI implementation.
+In this project, we compared receding-horizon optimization (CEC) and value iteration (GPI) for unicycle trajectory tracking. CEC is the more mature solution in our implementation: it works well at $\Delta t = 0.5$ s, tracks the reference accurately in the exact numerical simulator, and also transfers cleanly to MuJoCo. GPI remains a useful conceptual benchmark for infinite-horizon stochastic control, but the current version is both unfinished and evaluated in a deterministic setting (no process noise), so additional development is needed before making a full stochastic comparison with CEC. The main trade-off is therefore between the online computational cost of CEC and the offline development effort needed to complete a strong GPI implementation.
 
 \begin{thebibliography}{00}
 \bibitem{b1} N. Atanasov, ``ECE276B: Planning \& Learning in Robotics -- Schedule,'' University of California San Diego.
