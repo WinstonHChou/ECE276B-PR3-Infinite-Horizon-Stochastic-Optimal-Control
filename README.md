@@ -4,57 +4,105 @@ SP 26 ECE 276B Project 3: Infinite-Horizon Stochastic Optimal Control
 ## Course Overview
 This is Project 3 for [ECE 276B: Planning & Learning in Robotics](https://natanaso.github.io/ece276b/) at UCSD, taught by Professor [Nikolay Atanasov](https://natanaso.github.io/).
 
-## Project Description
-This project focuses on solving ***infinite-horizon* stochastic optimal control** problems to develop safe trajectory tracking techniques for a ground differential-drive robot.
+## Project Overview
+This project studies trajectory tracking for a unicycle-like car model in a 2D obstacle environment.
 
-## Prerequisites
-The code is only tested with miniconda environment.
-- Miniconda Installed: https://docs.anaconda.com/miniconda/install/#quick-command-line-install
-    ```bash
-    mkdir -p ~/miniconda3
-    wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda3/miniconda.sh
-    bash ~/miniconda3/miniconda.sh -b -u -p ~/miniconda3
-    rm ~/miniconda3/miniconda.sh
-    ```
-    After installing, close and reopen your terminal application or refresh it by running the following command:
-    ```bash
-    source ~/miniconda3/bin/activate
-    conda init --all
-    ```
-- Use `conda` to create a `python3.11` virtual environment (`ece276b_pr3`), and install required packages:
-    ```bash
-    conda create -n ece276b_pr3 python=3.11
-    conda activate ece276b_pr3
-    pip3 install -r requirements.txt
-    ```
-- Whenever creating a **new terminal session**, do:
-    ```bash
-    conda deactivate
-    conda activate ece276b_pr3
-    ```
+Two controllers are implemented and compared:
+- Certainty Equivalent Control (CEC): receding-horizon nonlinear optimization (CasADi + IPOPT)
+- Generalized Policy Iteration (GPI): discretized infinite-horizon dynamic programming
 
-## Running the Project
-### Standard Run:
+The target trajectory is a periodic lemniscate (figure-eight). Dynamics are propagated with exact discrete-time integration, and MuJoCo is used as an additional simulator for validation.
 
-Run tests using `src/main.py`:
+## Repository Structure
+- `src/main.py`: entry point, controller selection, simulation loop
+- `src/utils.py`: dynamics, constants, trajectory, visualization
+- `src/cec.py`: CEC formulation and solver
+- `src/gpi.py`: GPI discretization, transition/cost precomputation, policy iteration
+- `src/mujoco_car.py`: MuJoCo simulator wrapper
+- `src/fig/`: generated figures
+- `src/gpi_outputs/`: cached GPI artifacts (`policy.npy`, `value.npy`, transition/cost tensors)
+- `report/[ECE 276B] PR 3 Report.tex`: final writeup
+
+## Environment Setup
+Tested with Python 3.11 in a conda environment.
+
 ```bash
-# TODO
+conda create -n ece276b_pr3 python=3.11
+conda activate ece276b_pr3
+pip install -r requirements.txt
 ```
 
-## Features
-- TODO
+For each new terminal session:
 
-## Output Graphs
-TODO
+```bash
+conda activate ece276b_pr3
+```
 
-### Part 1:
-TODO
+## How to Run
+Run from the repository root.
 
-### Part 2:
-TODO
+### CEC in numerical simulator
+```bash
+python src/main.py -c cec
+```
 
-### Part 3:
-TODO
+### CEC in MuJoCo simulator
+```bash
+python src/main.py -c cec --mujoco
+```
 
-## Acknowledgments
-This project is part of the **ECE 276B** course at **UC San Diego**, which is inspired by the teaching and research of various professors in the field of robotics and planning.
+### GPI rollout
+```bash
+python src/main.py -c gpi
+```
+
+### Save animation output
+Add `--save` to any run command.
+
+```bash
+python src/main.py -c cec --save
+```
+
+## Key Parameters
+Current default settings (from code):
+- `dt = 0.5 s`
+- World bounds: `[-3, 3] x [-3, 3]`
+- Robot radius: `0.3`
+- Velocity limits: `v in [0.1, 1.0]`, `w in [-1.0, 1.0]`
+- Process noise sigma: `[0.04, 0.04, 0.004]`
+- CEC horizon: `T = 10`
+- GPI horizon: `T = 100` (one trajectory period with `dt = 0.5`)
+- CEC control weight: `R = diag(0.1, 0.1)`
+- GPI control weight: `R = diag(0.5, 0.5)`
+
+## Current Results Summary (dt = 0.5)
+Measured from current runs:
+
+| Method | Avg Iteration Time (ms) | Final Translational Error | Final Rotational Error |
+|---|---:|---:|---:|
+| CEC (Numerical, exact integration) | 69.22 | 55.14 | 43.74 |
+| CEC (MuJoCo) | 692.83 | 65.94 | 28.99 |
+| GPI (deterministic, no process noise) | 0.37 | 142.52 | 94.99 |
+
+Interpretation:
+- CEC currently gives better tracking quality in this project.
+- GPI is much faster online but currently less accurate and still incomplete.
+- The reported GPI rollout is deterministic (no process noise in the transition model).
+- A complete stochastic GPI benchmark should incorporate stochastic transition backups, which is left as future work.
+
+## Figures
+Generated example figures:
+- `src/fig/cec_dt_0.5.png`
+- `src/fig/cec_mujoco_dt_0.5.png`
+- `src/fig/gpi_dt_0.5_no_noise.png`
+
+## Notes
+- GPI precomputation can be expensive the first time because transition and stage-cost tensors are cached to `src/gpi_outputs/`.
+- If you change discretization sizes or horizon settings, clear/update cached outputs accordingly.
+
+## Report
+The full writeup is in:
+- `report/[ECE 276B] PR 3 Report.tex`
+
+## Acknowledgment
+This project is part of ECE 276B at UC San Diego.
