@@ -91,17 +91,8 @@ def visualize(car_states, ref_traj, obstacles, t, time_step, save=False):
         y = car_states[i, 1]
         th = car_states[i, 2]
 
-        # update path
-        if i == 0:
-            path.set_data(np.array([]), np.array([]))
-        x_new = np.hstack((path.get_xdata(), x))
-        y_new = np.hstack((path.get_ydata(), y))
-        path.set_data(x_new, y_new)
-
-        # update horizon
-        # x_new = car_states[0, :, i]
-        # y_new = car_states[1, :, i]
-        # horizon.set_data(x_new, y_new)
+        # update path (absolute indexing to support random access for savefig)
+        path.set_data(car_states[:i+1, 0], car_states[:i+1, 1])
 
         # update current_state
         current_state.set_xy(create_triangle([x, y, th], update=True))
@@ -160,10 +151,16 @@ def visualize(car_states, ref_traj, obstacles, t, time_step, save=False):
         blit=True,
         repeat=True,
     )
-    plt.show()
 
     if save:
+        # Save animation
         sim.save(str(BASE_DIR / f"./fig/animation{time()}.gif"), writer="ffmpeg", fps=15)
+        
+        # Save the last frame as PNG
+        animate(len(t) - 1)
+        plt.savefig(str(BASE_DIR / f"./fig/animation{time()}.png"))
+    
+    plt.show()
 
     return
 

@@ -306,7 +306,7 @@ class GPI(ControllerBase):
         """
         Initialize the value function.
         """
-        if self.value_dir.exists:
+        if self.value_dir.exists():
             self.V.value = self.load_value_function()
         else:
             self.V.value = np.zeros((self.config.T + 1, self.nx, self.ny, self.nth))
@@ -322,7 +322,7 @@ class GPI(ControllerBase):
         """
         Initialize the policy.
         """
-        if self.policy_dir.exists:
+        if self.policy_dir.exists():
             self.policy = self.load_policy()
         else:
             self.policy = np.zeros((self.config.T, self.nx, self.ny, self.nth, 2), dtype=float)
