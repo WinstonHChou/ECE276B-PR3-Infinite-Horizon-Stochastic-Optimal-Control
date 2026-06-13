@@ -26,19 +26,19 @@ A = 2.0
 B = 2.0
 
 # This function returns the reference point at time t
-def lemniscate(t):
+def lemniscate(cont_t: float):
     """Reference trajectory: x = A sin(at), y = B sin(2at), periodic with period T = 100 * 0.5 sec."""
     a = 2 * np.pi / PERIOD
-    xref = A * np.sin(a * t)
-    yref = B * np.sin(2 * a * t)
-    vx = A * a * np.cos(a * t)
-    vy = 2 * B * a * np.cos(2 * a * t)
+    xref = A * np.sin(a * cont_t)
+    yref = B * np.sin(2 * a * cont_t)
+    vx = A * a * np.cos(a * cont_t)
+    vy = 2 * B * a * np.cos(2 * a * cont_t)
     thetaref = np.arctan2(vy, vx)
     return [xref, yref, thetaref]
 
 
 # Initial state on the reference trajectory at t = 1.0
-_x0, _y0, _th0 = lemniscate(t=1.0)
+_x0, _y0, _th0 = lemniscate(cont_t=1.0)
 X_INIT = _x0
 Y_INIT = _y0
 THETA_INIT = _th0
@@ -50,8 +50,8 @@ def car_next_state(time_step, cur_state, control, noise=True):
     d_phi = control[1] * time_step / 2  # half step rotation (w*dt/2)
     phi = theta + d_phi
     rot_3d_z_exact_integration = np.array(
-        [[time_step * np.sinc(d_phi) * np.cos(phi), 0],
-         [time_step * np.sinc(d_phi) * np.sin(phi), 0],
+        [[time_step * np.sinc(d_phi / np.pi) * np.cos(phi), 0],
+         [time_step * np.sinc(d_phi / np.pi) * np.sin(phi), 0],
          [0, time_step]]
     )
     F = rot_3d_z_exact_integration @ control

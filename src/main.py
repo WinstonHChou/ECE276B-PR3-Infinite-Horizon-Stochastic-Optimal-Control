@@ -2,7 +2,7 @@ from time import time
 import numpy as np
 from utils import *
 from cec import CEC, CECConfig
-# from gpi import GPI, GpiConfig
+from gpi import GPI, GPIConfig
 from mujoco_car import MujocoCarSim
 import argparse
 
@@ -30,22 +30,30 @@ CONTROLLER_LOOKUP = {
         terminal_Q=np.diag([10.0, 10.0]),
         gamma=0.95,
     )),
-    # GPI.name: (GPI, GpiConfig(
-    #     dt=TIME_STEP,
-    #     traj_func=TRAJ_FUNC,
-    #     obstacles=OBSTACLES,
-    #     T=10,  # MPC horizon
-    #     Q=np.diag([1.0, 1.0]),
-    #     q=1.0,
-    #     R=np.diag([0.1, 0.1]),
-    #     terminal_q=1.0,
-    #     terminal_Q=np.diag([10.0, 10.0]),
-    #     gamma=0.95,
-    #     # GPI specific config
-    #     ex_space=np.linspace(WORLD_BOUNDS[0], WORLD_BOUNDS[1], 100),
-    #     ey_space=np.linspace(WORLD_BOUNDS[2], WORLD_BOUNDS[3], 100),
-    #     eth_space=np.linspace(-np.pi, np.pi, 36),
-    # )),
+    GPI.name: (GPI, GPIConfig(
+        dt=TIME_STEP,
+        traj_func=TRAJ_FUNC,
+        obstacles=OBSTACLES,
+        T=int(PERIOD // TIME_STEP),  # GPI horizon
+        Q=np.diag([1.0, 1.0]),
+        q=1.0,
+        R=np.diag([0.1, 0.1]),
+        terminal_q=1.0,
+        terminal_Q=np.diag([10.0, 10.0]),
+        gamma=0.95,
+        # GPI specific config
+        epos_band=[
+            (0.0, 1.0, 15),
+            (1.0, 3.0, 5),
+        ],
+        eth_space=np.linspace(-np.pi, np.pi, 72),
+        v_space=np.linspace(V_MIN, V_MAX, 8),
+        w_space=np.linspace(W_MIN, W_MAX, 15),
+        num_evals=10,
+        collision_margin=0.1,
+        collision_cost_weight=1e3,
+        output_dir=str(BASE_DIR / "gpi_outputs"),
+    )),
 }
 
 parser = argparse.ArgumentParser()

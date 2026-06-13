@@ -38,236 +38,102 @@ w3chou@ucsd.edu}
 \maketitle
 
 \begin{abstract}
-This paper presents implementations of search-based motion planning algorithms for solving infinite-horizon stochastic optimal control problems in 3D euclidean spaces. Two major algorithms are implemented: A* (A-star) and LPA* (Lifelong Planning A*). The results show that different space resolutions, heuristic weights, and planning strategies can significantly impact the performance of these algorithms in complex environments. The approach can provide optimal shortest paths for robotic navigation and planning problems.
+This report presents the implementation and evaluation of two optimal control strategies for trajectory tracking of a unicycle car model in a stochastic environment with obstacles. We first implement a receding-horizon Certainty Equivalent Control (CEC) scheme that solves a Non-Linear Programming (NLP) problem at each time step. Second, we utilize Generalized Policy Iteration (GPI) to solve the infinite-horizon stochastic optimal control problem through value iteration on a discretized state space. We compare the performance of both methods in tracking a complex lemniscate trajectory while maintaining safety. Our results highlight the trade-offs between online optimization (CEC) and offline value function pre-computation (GPI) regarding tracking accuracy and real-time feasibility.
 \end{abstract}
 
 \begin{IEEEkeywords}
-infinite-horizon stochastic optimal control, A*, Lifelong Planning A*, motion planning, replanning, robotics
+Trajectory tracking, stochastic optimal control, Certainty Equivalent Control, Generalized Policy Iteration, unicycle kinematics.
 \end{IEEEkeywords}
 
 \section{Introduction}
 
-Motion planning is a fundamental challenge in robotics, particularly for autonomous agents operating in complex three-dimensional environments. The primary goal is to find a collision-free path from an initial configuration to a target location while optimizing certain criteria, such as path length or time. In 3D spaces, the increased dimensionality and presence of diverse obstacles like narrow passages and varying heights necessitate robust and efficient planning algorithms.
+Autonomous robot navigation requires precise trajectory tracking capabilities alongside robust obstacle avoidance. In many practical applications, the robot's dynamics are non-linear and subject to stochastic disturbances, while the environment contains complex constraints. This project focuses on the trajectory tracking problem for a unicycle robot tasked with following a periodic lemniscate path in the presence of circular obstacles and motion noise.
 
-\subsection{Problem Overview}
+We explore two foundational approaches in optimal control:
+\begin{enumerate}
+    \item \textbf{Certainty Equivalent Control (CEC):} A receding-horizon approach that simplifies the stochastic control problem by solving a deterministic optimization problem at each step. By ignoring noise and assuming the most likely transition, CEC leverages efficient NLP solvers to find locally optimal control sequences.
+    \item \textbf{Generalized Policy Iteration (GPI):} A dynamic programming-based approach that addresses the stochasticity directly. By discretizing the error-state space, GPI computes a value function and an optimal policy offline that minimizes the expected infinite-horizon discounted cost.
+\end{enumerate}
 
-This project focuses on implementing and evaluating search-based motion planning algorithms in various 3D grid-map environments. We consider a set of diverse scenarios, including a "Flappy Bird" style obstacle course, a dense 3D maze, and environments with dynamic target sequences such as "Window" and "Room". The agent must navigate these spaces by discretizing the continuous 3D volume into a grid and performing graph searches to identify optimal trajectories.
-
-\subsection{Approach}
-
-To address these challenges, we employ two powerful search-based algorithms: \textbf{A*} and \textbf{Lifelong Planning A* (LPA*)}.
-
-The A* algorithm is used for static environments where the entire map and goal are known beforehand. It combines the cost-to-come with a heuristic estimate of the cost-to-go, ensuring optimality while maintaining efficiency. For environments with dynamic targets or changing goal locations—where re-calculating the entire path from scratch would be computationally expensive—we utilize LPA*. LPA* is an incremental search algorithm that reuses information from previous searches to update the current path efficiently as the target location or environment changes.
-
-By benchmarking these approaches across different grid resolutions and heuristic weights ($\epsilon$), we analyze the trade-offs between path quality and computational overhead.
+This report details the mathematical formulation of the unicycle dynamics and the tracking objective, describes the implementation of both algorithms, and provides a comparative analysis of their tracking performance and computational characteristics.
 
 \section{Problem Statement}
 
-The goal of 3D motion planning is to find an optimal collision-free path for a point robot operating in a 3D Euclidean space. The problem can be defined by the environment boundaries, a set of obstacles, a starting configuration, and one or more goal configurations.
+The robot is modeled as a unicycle car operating in a 2D environment $\mathcal{W} \subset \mathbb{R}^2$ with state $x_t \in \mathbb{R}^3$ and control $u_t \in \mathcal{U} \subset \mathbb{R}^2$.
 
-\subsection{State Space and Environment}
-
-The configuration space $\mathcal{X}_{free} \subset \mathbb{R}^3$ is defined within a bounding box $\mathcal{B} = [x_{min}, x_{max}] \times [y_{min}, y_{max}] \times [z_{min}, z_{max}]$. The environment contains a set of static obstacles $\mathcal{O} = \{O_1, O_2, \dots, O_n\}$, where each $O_i$ is represented as an Axis-Aligned Bounding Box (AABB). The free space is thus $\mathcal{X}_{free} = \mathcal{B} \setminus \bigcup_{i=1}^n O_i$.
-
-To solve the planning problem using search-based methods, the continuous space is discretized into a uniform grid with a specified resolution $res$. Each state $x \in \mathcal{S}$ represents a coordinate $(x_{pos}, y_{pos}, z_{pos})$ in the grid.
-
-\subsection{Action Space and Connectivity}
-
-The robot can move between adjacent grid cells. We employ a 26-connectivity model, where each node is connected to all its neighbors in a $3 \times 3 \times 3$ cube centered at the node (excluding the node itself). This allows for diagonal movements in 3D, providing more flexible and shorter paths than a simple 6-connectivity (cardinal directions) model.
-
-The cost of moving from state $x$ to an adjacent state $x'$ is defined by the Euclidean distance:
+\subsection{Robot Dynamics}
+The continuous-time kinematics are given by:
 \begin{equation}
-\begin{split}
-c(x, x') &= \| x - x' \|_2 \\ &= \sqrt{(x_{pos}-x'_{pos})^2 + (y_{pos}-y'_{pos})^2 + (z_{pos}-z'_{pos})^2}
-\end{split}
+    \dot{x} = \begin{bmatrix} \dot{p}_x \\ \dot{p}_y \\ \dot{\theta} \end{bmatrix} = \begin{bmatrix} v \cos \theta \\ v \sin \theta \\ \omega \end{bmatrix}
 \end{equation}
-
-\subsection{Collision Constraints}
-
-A path $\rho$ is valid if it is entirely contained within $\mathcal{X}_{free}$. Since planning is performed on a discrete graph, we must ensure that the linear segments connecting discrete states do not intersect any obstacle $O_i$. This is handled by a safety evaluator that performs intersection tests between the path segments and the AABBs in the environment.
+where $v$ and $\omega$ are the linear and angular velocities. The discrete-time stochastic dynamics used in this project assume exact integration over a time step $\Delta t$:
+\begin{equation}
+    x_{k+1} = f(x_k, u_k) + w_k, \quad w_k \sim \mathcal{N}(0, \Sigma)
+\end{equation}
+where $w_k$ represents the process noise.
 
 \subsection{Objective Function}
-
-The objective is to find a path $\rho = (x_0, x_1, \dots, x_k)$ from a start state $s$ to a goal state $\tau$ that minimizes the cumulative cost:
+The goal is to follow a reference trajectory $x_{ref}(t)$. We define the tracking error as $e_k = x_k - x_{ref}(k \Delta t)$. The objective is to minimize the expected infinite-horizon discounted cost:
 \begin{equation}
-J(\rho) = \sum_{i=0}^{k-1} c(x_i, x_{i+1})
+    J(x_0) = \mathbb{E} \left[ \sum_{k=0}^{\infty} \gamma^k \ell(e_k, u_k) \right]
 \end{equation}
-subject to $x_0 = s$, $x_k = \tau$, and $x_i \in \mathcal{S}_{free}$ for all $i$. For dynamic target scenarios, the agent must visit a sequence of goals $T = \{\tau_1, \tau_2, \dots, \tau_m\}$ in order, minimizing the cost for each segment while potentially adapting to newly revealed goal locations.
-
-\subsection{Static Benchmarking Environments}
-
-To evaluate the performance of our search-based planners, we utilize five distinct static maps:
-\begin{itemize}
-    \item \textbf{Flappy Bird (E1):} Features vertical pillars with narrow openings at varying heights, requiring precise elevation control.
-    \item \textbf{Maze (E2):} A dense 3D maze with numerous narrow passages and dead ends, testing search efficiency.
-    \item \textbf{Monza (E3):} A winding, corridor-like environment inspired by a race track, challenging the planner's ability to navigate smooth turns.
-    \item \textbf{Single Cube (E4):} A basic configuration with a single  obstacle, used for initial verification.
-    \item \textbf{Tower (E5):} Stacked structures creating high vertical obstacles that necessitate maneuvers in the $Z$-axis.
-\end{itemize}
-
-\subsection{Dynamic Target Stay Time Requirements}
-
-In scenarios with dynamic targets, each goal $\tau_i$ in the sequence $T$ remains active for a specific \textit{stay time} $t_{stay, i}$ before moving to the next position $\tau_{i+1}$. A plan for the sequence is considered successful only if the motion planner can compute a valid path to each goal before the respective stay time expires. Specifically, the cumulative planning time must satisfy:
+where $\gamma \in (0, 1)$ is the discount factor and $\ell(e, u)$ is the stage cost:
 \begin{equation}
-\sum_{j=1}^{i} t_{plan, j} \leq \sum_{j=1}^{i} t_{stay, j}
+    \ell(e, u) = e_{pos}^T Q e_{pos} + q(1 - \cos e_{\theta})^2 + u^T R u
 \end{equation}
-Furthermore, the system follows a synchronous update rule: if the planning for goal $\tau_i$ completes within a time $t_{plan, i} < t_{stay, i}$, the system waits until the full duration $\sum_{j=1}^i t_{stay, j}$ has elapsed before initiating the search for the next goal $\tau_{i+1}$. This ensures that the agent's path updates are synchronized with the discrete jumps of the dynamic target.
+Here $e_{pos} = [e_x, e_y]^T$, while $Q$, $R$, and $q$ are weighting parameters.
 
-For the benchmarking environments used in this study, the stay times are configured as follows:
-\begin{itemize}
-    \item \textbf{Window (E6):} The target stays at the first location for 3 seconds ($t_{stay, 1} = 3s$) and subsequent locations for 1 second each ($t_{stay, i>1} = 1s$).
-    \item \textbf{Room (E7):} The target stays for 0.3 seconds initially ($t_{stay, 1} = 0.3s$) and 0.1 seconds for all following goals ($t_{stay, i>1} = 0.1s$).
-\end{itemize}
-These tight timing constraints emphasize the need for efficient replanning algorithms like LPA* that can reuse previous computations to minimize $t_{plan}$.
+\subsection{Constraints}
+The control inputs are constrained within $[v_{min}, v_{max}]$ and $[\omega_{min}, \omega_{max}]$. Additionally, the robot must avoid a set of $n$ circular obstacles $\mathcal{O} = \{O_j\}_{j=1}^n$ and remain within the world boundaries. Safety is enforced by ensuring the distance to any obstacle center $p_{O,j}$ satisfies:
+\begin{equation}
+    \| p_x - p_{O,j} \|_2 \geq r_j + r_{robot}
+\end{equation}
+where $r_j$ is the obstacle radius and $r_{robot}$ is the robot's collision margin.
 
 \section{Technical Approach}
 
-The motion planning problem is solved using search-based algorithms on a discretized 3D grid. The implementation focuses on safety, efficiency, and adaptability to dynamic targets.
+The trajectory tracking problem is addressed using two distinct paradigms: receding-horizon optimization and infinite-horizon value iteration.
 
-\subsection{Continuous Collision Detection with Coal}
-
-Safety is ensured by validating that each linear segment between discrete grid states does not intersect any obstacles. We utilize the \textbf{coal} library (a fork of the Flexible Collision Library (FCL) formerly known as \textit{hpp-fcl}), which provides high-performance proximity queries. 
-
-Each static obstacle $O_i$ is represented as a \texttt{coal::CollisionObject} with a Box geometry. For a linear traversal between states $x_i$ and $x_{i+1}$, we model the path segment as a \texttt{coal::Capsule} with a radius of zero. This representation allows the library to perform continuous collision detection (CCD) between the segment and the Axis-Aligned Bounding Boxes (AABBs) of the obstacles. This approach ensures that even diagonal movements are strictly collision-free.
-
-\subsection{Optimized A* Algorithm}
-
-For static environments, we implement the A* algorithm to find the optimal path $\rho^*$. A* maintains an \texttt{OPEN} list (priority queue) of discovered nodes, ordered by the evaluation function $f(x) = g(x) + \epsilon h(x)$, where $g(x)$ is the cost-to-come and $h(x)$ is the heuristic estimate (Euclidean distance) to the goal $\tau$.
-
-To maximize computational efficiency, we pre-calculate the neighbor offsets and their corresponding Euclidean costs for the 26-connectivity model:
+\subsection{Certainty Equivalent Control (CEC)}
+CEC simplifies the stochastic optimal control problem by assuming that process noise is zero during the planning horizon. At each time step $k$, we solve a finite-horizon deterministic optimal control problem:
 \begin{equation}
-\Delta_{neighbors} = \{ (\delta_x, \delta_y, \delta_z) \mid \delta_i \in \{-1, 0, 1\}, \sum |\delta_i| > 0 \}
+    \min_{u_{k:k+T-1}} \sum_{i=k}^{k+T-1} \gamma^{i-k} \ell(e_i, u_i) + \gamma^T \ell_{term}(e_{k+T})
 \end{equation}
-By caching these relative indices and distances as \texttt{INDEX\_OFFSETS}, the planner avoids redundant arithmetic during the \texttt{get\_neighbors} call, significantly reducing the overhead of graph expansion.
+subject to the unicycle dynamics and control/state constraints. We implement this using the CasADi framework with the $ipopt$ solver. Only the first control $u_k^*$ is applied, and the optimization is repeated at the next time step.
 
-\begin{algorithm}[htbp]
-\caption{A* Search Algorithm}
-\begin{algorithmic}[1]
-\STATE \textbf{Initialize:}
-\STATE $g(s) \gets 0, h(s) \gets \text{heuristic}(s, \tau, \epsilon), f(s) \gets g(s) + h(s)$
-\STATE $g(x) \gets \infty$ for all $x \in \mathcal{X} \setminus \{s\}$
-\STATE $OPEN \gets \{s\}$ with priority $f(s)$
-\WHILE{$OPEN \neq \emptyset$}
-    \STATE $x \gets \text{pop node with min } f(x) \text{ from } OPEN$
-    \STATE mark $x$ as closed
-    \IF{$\text{grid}(x) = \text{grid}(\tau)$}
-        \STATE \textbf{return} backtrace path from $x$
-    \ENDIF
-    \FOR{each neighbor $x'$ of $x$}
-        \STATE $cost \gets c(x, x')$
-        \IF{$x'$ not opened \OR $g(x) + cost < g(x')$}
-            \STATE $parent(x') \gets x$
-            \STATE $g(x') \gets g(x) + cost$
-            \IF{$h(x')$ is not computed}
-                \STATE $h(x') \gets \text{heuristic}(x', \tau, \epsilon)$
-            \ENDIF
-            \STATE $f(x') \gets g(x') + h(x')$
-            \STATE mark $x'$ as opened
-            \STATE insert/update $x'$ in $OPEN$ with priority $f(x')$
-        \ENDIF
-    \ENDFOR
-\ENDWHILE
-\STATE \textbf{return} failure
-\end{algorithmic}
-\end{algorithm}
-
-\subsection{Dynamic Replanning with Lifelong Planning A*}
-
-In scenarios where the target $\tau$ moves through a sequence $\{\tau_1, \tau_2, \dots, \tau_m\}$, re-running A* from scratch for every segment is computationally prohibitive. We employ \textbf{Lifelong Planning A* (LPA*)} \cite{b2} to exploit the fact that large portions of the search graph remain valid between subsequent planning iterations.
-
-LPA* maintains two cost estimates for each node: the $g$-value (cost-to-come) and the $v$-value (cost-to-come during the last expansion). A node is \textit{inconsistent} if $g(x) \neq v(x)$. The algorithm iteratively expands inconsistent nodes to maintain the shortest path tree. 
-
-A key modification in our implementation addresses the frequent movement of the goal $\tau$. When the goal shifts from $\tau_i$ to $\tau_{i+1}$, the heuristic values $h(x, \tau)$---and consequently the priority keys $k(x)$---for all nodes in the \texttt{OPEN} list become outdated. Unlike standard LPA*, our system explicitly updates the heuristics and keys for every node remaining in the \texttt{OPEN} list before initiating the search for a new goal. This ensures that the search remains focused on the new target while reusing the previously explored connectivity information.
-
-\begin{algorithm}[htbp]
-\caption{Lifelong Planning A* (LPA*)}
-\begin{algorithmic}[1]
-\STATE \textbf{procedure} CalculateKey($x$)
-\IF{$h(x)$ is not computed}
-    \STATE $h(x) \gets \text{heuristic}(x, \tau, \epsilon)$
-\ENDIF
-\STATE \textbf{return} $[\min(g(x), v(x)) + h(x); \min(g(x), v(x))]$
-\STATE
-\STATE \textbf{procedure} UpdateMembership($x$)
-\IF{$v(x) \neq g(x)$ \AND $x$ is not closed}
-    \STATE mark $x$ as opened, $OPEN[x] \gets$ CalculateKey($x$)
-\ELSIF{$x$ is opened}
-    \STATE remove $x$ from $OPEN$
-\ENDIF
-\STATE
-\STATE \textbf{procedure} ComputePath()
-\WHILE{$TopKey(OPEN) < \text{CalculateKey}(\tau) \lor v(\tau) \neq g(\tau)$}
-    \STATE $x \gets \text{pop node with min key from } OPEN$
-    \IF{$v(x) > g(x)$}
-        \STATE $v(x) \gets g(x)$, mark $x$ as closed and not opened
-        \FORALL{neighbor $x'$ of $x$}
-            \IF{$g(x') > g(x) + c(x, x')$}
-                \STATE $g(x') \gets g(x) + c(x, x')$, $parent(x') \gets x$
-                \STATE UpdateMembership($x'$)
-            \ENDIF
-        \ENDFOR
-    \ELSE
-        \STATE $v(x) \gets \infty$, UpdateMembership($x$)
-        \FORALL{neighbor $x'$ of $x$ \textbf{s.t.} $parent(x') = x$}
-            \STATE $g(x') \gets \min_{x'' \in Pred(x')} (v(x'') + c(x'', x'))$
-            \STATE $parent(x') \gets \text{argmin}_{x'' \in Pred(x')} (v(x'') + c(x'', x'))$
-            \STATE UpdateMembership($x'$)
-        \ENDFOR
-    \ENDIF
-\ENDWHILE
-\STATE
-\STATE \textbf{Main Loop:}
-\STATE $v(x), g(x) \gets \infty$ for all $x$; $g(s) \gets 0$; UpdateMembership($s$)
-\LOOP
-    \IF{target $\tau$ moved}
-        \STATE reset all $h(x) \gets \infty$
-        \FORALL{$x \in OPEN$}
-            \STATE update $OPEN[x] \gets \text{CalculateKey}(x)$
-        \ENDFOR
-    \ENDIF
-    \STATE ComputePath()
-    \STATE \textbf{return} backtrace path from $\tau$
-    \STATE \textbf{wait} for next goal $\tau$ or obstacle update
-\ENDLOOP
-\end{algorithmic}
-\end{algorithm}
+\subsection{Generalized Policy Iteration (GPI)}
+GPI addresses the infinite-horizon problem by pre-computing a stationary optimal policy $\pi^*(e)$. The continuous error-state space $\mathcal{E}$ is discretized into a finite grid $\mathcal{S}_{grid}$. We perform two interleaved steps:
+\begin{enumerate}
+    \item \textbf{Policy Evaluation:} Estimate the value function $V^\pi$ for the current policy $\pi$.
+    \item \textbf{Policy Improvement:} Update the policy by selecting the action that minimizes the one-step lookahead cost:
+    \begin{equation}
+        \pi'(e) = \arg\min_{u \in \mathcal{U}} \left\{ \ell(e, u) + \gamma \sum_{e'} P(e'|e, u) V^\pi(e') \right\}
+    \end{equation}
+\end{enumerate}
+To scale to large grids, we utilize Numba-accelerated JIT compilation for the transition matrix and cost computations, and enforce periodic wrap-around ($V_T = V_0$) for the lemniscate trajectory.
 
 \section{Results}
 
-The proposed algorithms were evaluated across seven diverse 3D environments. The benchmarks show that A* provides reliable shortest paths in static maps like "Flappy Bird" and "Maze," while LPA* demonstrates superior performance in dynamic scenarios by reducing the number of node expansions required to reach new goal locations.
+\subsection{CEC Performance}
+The CEC controller demonstrates robust tracking of the lemniscate trajectory in deterministic settings. However, as process noise increases, the receding-horizon solution may drift if the horizon $T$ is too short.
 
-\subsection{Static Map Benchmarks}
-In static environments, the choice of resolution and heuristic weight $\epsilon$ (for Weighted A*) creates a trade-off between path optimality and planning speed. Table \ref{tab:static_eps} shows the impact of $\epsilon$ on path length and expansion count, while Table \ref{tab:static_res} highlights the sensitivity of the planner to grid resolution. The visual results of the planned paths for environments E1--E5 are shown in Fig. \ref{fig:path_e1}, \ref{fig:path_e2}, \ref{fig:path_e3}, \ref{fig:path_e4}, and \ref{fig:path_e5} respectively.
+\subsection{GPI Performance}
+The GPI policy provides a fast lookup-based control law. Its performance is heavily dependent on the discretization resolution of the error states. We analyze the tracking error convergence and the impact of the discount factor $\gamma$.
 
-\subsubsection{Impact of Resolution}
-Decreasing the grid resolution (e.g., from $1.0$ to $0.25$) significantly improves path optimality but at a high computational cost. As observed in Fig. \ref{fig:path_e2}, a coarser resolution of $1.0$ causes the A* algorithm to fail in the dense Maze (E2) because narrow passages become impassable in the discretized graph. In contrast, the $0.25$ resolution path is smoother and shorter but requires nearly $100\times$ more node expansions (Table \ref{tab:static_res}).
-
-\subsubsection{Impact of Heuristic Weight ($\epsilon$)}
-The use of Weighted A* ($\epsilon > 1$) acts as a greedy search bias. In environments like Flappy Bird (E1) and Tower (E5), increasing $\epsilon$ from $1.0$ to $2.0$ reduces node expansions by up to $60\%$ (Table \ref{tab:static_eps}) with only a marginal increase in path length ($<5\%$). Visually, the $\epsilon=2.0$ paths in Fig. \ref{fig:path_e1} and \ref{fig:path_e5} exhibit more jagged segments as the planner prioritizes reaching the goal over finding the absolute shortest traversal.
-
-\input{tmp/table_static_eps.tex}
-\input{tmp/table_static_res.tex}
-
-\subsection{Dynamic Map Benchmarks}
-For environments like "Room" and "Window" with dynamic targets, LPA* effectively manages the tight stay-time constraints. As shown in Table \ref{tab:dynamic_comp}, by reusing the search graph, the planner finds paths to subsequent goals significantly faster than A* while maintaining path quality. Figures \ref{fig:path_e6} and \ref{fig:path_e7} visualize the resulting trajectories in the Window and Room environments.
-
-\subsubsection{A* vs. LPA* Performance}
-The primary advantage of LPA* is its ability to minimize replanning latency by reusing previous $g$-value computations. In the Window environment (E6), while A* must re-expand thousands of nodes for every target move, LPA* often performs zero expansions (Table \ref{tab:dynamic_comp}) when the target stays within a previously explored region. This is reflected in the cumulative trajectories in Fig. \ref{fig:path_e6}, where LPA* maintains a coherent search tree across the window opening.
-
-\subsubsection{Meeting Tight Timing Constraints}
-In the Room environment (E7), the target stay times are extremely short ($0.1s$). Static A* struggles to find paths within this window at high resolutions. However, LPA* maintains sub-millisecond planning times after the initial search. As illustrated in Fig. \ref{fig:path_e7}, LPA* successfully tracks all 8 goal locations in the room, whereas A* results in frequent "Success: No" markers in the logs when the stay time expires before convergence.
-
-\input{tmp/table_dynamic_comp.tex}
-
-
+\subsection{Comparative Analysis}
+We compare CEC and GPI across several metrics:
+\begin{itemize}
+    \item \textbf{Computational Cost:} Online optimization time (CEC) vs. offline pre-computation time and online lookup time (GPI).
+    \item \textbf{Tracking Error:} Cumulative translation and rotation error.
+\end{itemize}
 
 \section{Conclusion}
 
-In this work, we implemented and evaluated search-based motion planning algorithms in 3D environments. By integrating the \textit{coal} library for continuous collision detection and optimizing graph expansion through neighbor caching, we achieved efficient path computation in complex static maps. Furthermore, the adaptation of LPA* to handle dynamic goal positions by updating heuristic values and priority keys proved effective in meeting tight stay-time constraints across diverse benchmarking scenarios. Future work could explore more advanced heuristics or sampling-based methods to further improve performance in extremely dense or unstructured 3D environments.
+In this project, we implemented and compared CEC and GPI for trajectory tracking of a unicycle robot. CEC offers flexibility in handling obstacle constraints through online optimization, while GPI provides a computationally efficient feedback law once the value function has converged. 
 
 \begin{thebibliography}{00}
-\bibitem{b1} N. Atanasov, ``ECE276B: Planning \& Learning in Robotics -- Schedule,'' University of California San Diego, [Online]. Available: https://natanaso.github.io/ece276b/schedule.html. [Accessed: May 22, 2026].
-\bibitem{b2} S. Koenig, M. Likhachev and D. Furcy, "Lifelong Planning A*," Artificial Intelligence, vol. 155, no. 1-2, pp. 93-146, 2004.
+\bibitem{b1} N. Atanasov, ``ECE276B: Planning \& Learning in Robotics -- Schedule,'' University of California San Diego.
+\bibitem{b2} D. P. Bertsekas, ``Dynamic Programming and Optimal Control,'' Athena Scientific.
 \end{thebibliography}
 
 \end{document}
